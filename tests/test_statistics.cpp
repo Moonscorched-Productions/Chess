@@ -167,3 +167,26 @@ TEST_CASE("review store: save, list and player games") {
     REQUIRE(reviews->remove(*won));
     CHECK(reviews->unreviewed() == std::vector<GameId>{*won});
 }
+
+TEST_CASE("activity: dates and streaks") {
+    using namespace core;
+    CHECK(dayNumberFromIso("1970-01-01") == 0);
+    CHECK(dayNumberFromIso("2000-03-01") == 11017);
+    CHECK(dayNumberFromIso("2026-11-23").has_value());
+    CHECK_FALSE(dayNumberFromIso("2026-13-01").has_value());
+    CHECK_FALSE(dayNumberFromIso("yesterday").has_value());
+    for (const char* date : {"1970-01-01", "2000-02-29", "2024-12-31", "2026-11-23"}) {
+        CHECK(isoFromDayNumber(*dayNumberFromIso(date)) == date);
+    }
+
+    CHECK(computeStreaks({}, 100).current == 0);
+    CHECK(computeStreaks({}, 100).longest == 0);
+    // 90..94 (5 days), a gap, then 98..100 (3 days, up to today).
+    const Streaks streaks = computeStreaks({100, 99, 98, 94, 93, 92, 91, 90, 99}, 100);
+    CHECK(streaks.longest == 5);
+    CHECK(streaks.current == 3);
+    // Today not played yet: the streak up to yesterday still counts.
+    CHECK(computeStreaks({97, 98, 99}, 100).current == 3);
+    // Missed yesterday: broken.
+    CHECK(computeStreaks({97, 98}, 100).current == 0);
+}

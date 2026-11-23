@@ -86,6 +86,9 @@ public:
     void resign(Color loser);
     // Ends the game as a draw by agreement. Ignored if the game is over.
     void agreeDraw();
+    // Ends the game because `loser`'s clock ran out. The other side wins, or it is a draw
+    // when that side has too little material to mate. Ignored if the game is over.
+    void flag(Color loser);
 
 private:
     struct Impl;

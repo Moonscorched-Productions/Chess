@@ -177,7 +177,7 @@ bool validateFen(std::string_view fen, std::string* error) {
 // --- Game::Impl ----------------------------------------------------------------
 
 struct Game::Impl {
-    enum class Manual { None, WhiteResigned, BlackResigned, DrawAgreed };
+    enum class Manual { None, WhiteResigned, BlackResigned, DrawAgreed, WhiteFlagged, BlackFlagged };
 
     chess::Board board;
     std::string startFen{kStartFen};
@@ -229,6 +229,22 @@ struct Game::Impl {
         if (manual == Manual::WhiteResigned || manual == Manual::BlackResigned) {
             status = Status::Resigned;
             result = manual == Manual::WhiteResigned ? Result::BlackWins : Result::WhiteWins;
+            return;
+        }
+        if (manual == Manual::WhiteFlagged || manual == Manual::BlackFlagged) {
+            status = Status::Timeout;
+            const chess::Color winner = manual == Manual::WhiteFlagged ? chess::Color::BLACK : chess::Color::WHITE;
+            // A lone king, or king and one minor piece, cannot mate: the game is drawn.
+            const int heavy = board.pieces(chess::PieceType::PAWN, winner).count() +
+                              board.pieces(chess::PieceType::ROOK, winner).count() +
+                              board.pieces(chess::PieceType::QUEEN, winner).count();
+            const int minors = board.pieces(chess::PieceType::KNIGHT, winner).count() +
+                               board.pieces(chess::PieceType::BISHOP, winner).count();
+            if (heavy == 0 && minors <= 1) {
+                result = Result::Draw;
+            } else {
+                result = winner == chess::Color::WHITE ? Result::WhiteWins : Result::BlackWins;
+            }
             return;
         }
 
@@ -467,6 +483,12 @@ Result Game::result() const { return impl_->result; }
 void Game::resign(Color loser) {
     if (isOver()) return;
     impl_->manual = loser == Color::White ? Impl::Manual::WhiteResigned : Impl::Manual::BlackResigned;
+    impl_->refresh();
+}
+
+void Game::flag(Color loser) {
+    if (isOver()) return;
+    impl_->manual = loser == Color::White ? Impl::Manual::WhiteFlagged : Impl::Manual::BlackFlagged;
     impl_->refresh();
 }
 

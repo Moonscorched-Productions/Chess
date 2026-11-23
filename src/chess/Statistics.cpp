@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 
 namespace core {
 
@@ -108,6 +109,61 @@ PlayerStats summarize(const std::vector<PlayerGame>& games) {
     std::stable_sort(stats.openings.begin(), stats.openings.end(),
                      [](const OpeningStats& a, const OpeningStats& b) { return a.games > b.games; });
     return stats;
+}
+
+// Howard Hinnant's civil-date algorithms.
+std::optional<int> dayNumberFromIso(std::string_view date) {
+    if (date.size() != 10 || date[4] != '-' || date[7] != '-') return std::nullopt;
+    const auto number = [&](std::size_t from, std::size_t count) {
+        int value = 0;
+        for (std::size_t i = from; i < from + count; ++i) {
+            if (date[i] < '0' || date[i] > '9') return -1;
+            value = value * 10 + (date[i] - '0');
+        }
+        return value;
+    };
+    int y = number(0, 4);
+    const int m = number(5, 2);
+    const int d = number(8, 2);
+    if (y < 0 || m < 1 || m > 12 || d < 1 || d > 31) return std::nullopt;
+    y -= m <= 2 ? 1 : 0;
+    const int era = (y >= 0 ? y : y - 399) / 400;
+    const int yoe = y - era * 400;
+    const int doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+
+std::string isoFromDayNumber(int day) {
+    const int z = day + 719468;
+    const int era = (z >= 0 ? z : z - 146096) / 146097;
+    const int doe = z - era * 146097;
+    const int yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const int doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const int mp = (5 * doy + 2) / 153;
+    const int d = doy - (153 * mp + 2) / 5 + 1;
+    const int m = mp + (mp < 10 ? 3 : -9);
+    const int y = yoe + era * 400 + (m <= 2 ? 1 : 0);
+    char text[16];
+    std::snprintf(text, sizeof(text), "%04d-%02d-%02d", y, m, d);
+    return text;
+}
+
+Streaks computeStreaks(std::vector<int> days, int today) {
+    Streaks streaks;
+    std::sort(days.begin(), days.end());
+    days.erase(std::unique(days.begin(), days.end()), days.end());
+    int run = 0;
+    for (std::size_t i = 0; i < days.size(); ++i) {
+        run = (i > 0 && days[i] == days[i - 1] + 1) ? run + 1 : 1;
+        streaks.longest = std::max(streaks.longest, run);
+    }
+    // The current streak ends today, or yesterday when today has not been counted yet.
+    if (!days.empty() && (days.back() == today || days.back() == today - 1)) {
+        streaks.current = 1;
+        for (std::size_t i = days.size() - 1; i > 0 && days[i - 1] == days[i] - 1; --i) ++streaks.current;
+    }
+    return streaks;
 }
 
 }  // namespace core

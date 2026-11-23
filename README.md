@@ -15,7 +15,15 @@ Play:
   highlights, promotion picker, board flip, sounds.
 - Full rules: castling, en passant, promotion, checkmate, stalemate, draws by repetition,
   fifty-move rule and insufficient material.
-- Move history, captured pieces, undo and redo, resign, draw offers, restart.
+- Move history, captured pieces, undo and redo, resign, mark the game as a draw, restart.
+- Time controls from bullet to classical (or custom), with increments. The engine plans its
+  own time; a player whose clock runs out loses, or draws when the other side cannot mate.
+- Move badges: tick "Move badges" and every move is judged as it is played (best, excellent,
+  good, inaccuracy, mistake, blunder), in the move list and on the board.
+- Coach mode: after a mistake or blunder the computer waits, shows the stronger move and
+  offers to take yours back. The clocks stop while the coach talks.
+- Opening practice: in "New game", pick a named opening or one of your repertoires. The
+  computer answers from it and the panel tells you when you leave it.
 - Play against Stockfish as White or Black, at 8 levels or a chosen Elo, with a time and
   depth limit per move, from the start position or any FEN. The engine runs as a separate
   process and never blocks the window.
@@ -43,6 +51,8 @@ Analysis:
 - FEN and PGN: paste either from the clipboard (Ctrl+V), copy them, open and save PGN
   files. Variations, comments, annotation glyphs and `[%eval]` values are read and written.
 - Right-drag on the board draws arrows, right-click marks squares.
+- Explorer tab: the moves played from the current position in your library games, with how
+  those games ended. "Only my games" shows your own results.
 - Board overlays: square control (blue where White attacks a square more often, red for
   Black), pieces that can be won, and piece activity (red for pieces without moves, green
   for active ones).
@@ -81,6 +91,12 @@ Openings:
   sooner. Transpositions count as one position.
 - Opening names (ECO code and name) are shown in Openings and Analysis.
 
+Guess the Move:
+
+- Play through a game from one side and guess each move: the move from the game earns 5
+  points, any other move up to 5 by how close the engine rates it. Six classic games are
+  bundled; any library game with ten or more moves works too.
+
 Endgames:
 
 - 16 training positions (basic mates, king and pawn, opposition, rook and queen endings),
@@ -105,6 +121,7 @@ Game Review:
   verified and unambiguous. Puzzles get a difficulty estimate and themes and appear in
   Puzzles under the theme "From my games".
 - "Review all new games" works through every library game without a review.
+- Stepping through the moves plays the move and capture sounds.
 - Reviews are stored with the game (evaluations and engine moves go into its PGN as
   `[%eval]` and `[%best]` comments), so opening it again needs no engine.
 
@@ -113,6 +130,7 @@ Statistics:
 - Built from the reviewed games you played: results, average accuracy overall and per
   colour, accuracy game by game, accuracy per game phase with the weakest one pointed out,
   how often each kind of move occurs, and results and accuracy per opening.
+- Time spent in the app, today and in total, a day streak and a calendar of the last year.
 - Your side is found by name. Games played here use "You"; add the names you use elsewhere
   (comma separated) at the bottom of the Statistics section to include imported games.
 
@@ -186,7 +204,7 @@ in the background. Presence can be switched off in Settings.
 | `tests` | Unit tests for the rules, PGN, move classification, game review, statistics, puzzles, spaced repetition, the opening book, the UCI parser and the stores. |
 | `tools` | `ucicheck` (engine check) and `make_badges.py`, which draws the move-quality badges in `data/badges` (needs Python with Pillow; only to regenerate them). |
 | `third_party/chess` | [chess-library](https://github.com/Disservin/chess-library) by Disservin (MIT). |
-| `data` | Piece set, sounds, opening names and starter puzzles. The opening tables and puzzles come from [Lichess](https://database.lichess.org) (CC0). The cburnett pieces (by Colin M.L. Burnett, GPLv2+) come from the [lichess](https://github.com/lichess-org/lila) repository and are rasterized from SVG at startup. The sounds are from [Kenney](https://kenney.nl) (CC0). |
+| `data` | Piece set, sounds, opening names, starter puzzles and the classic games for Guess the Move. The opening tables and puzzles come from [Lichess](https://database.lichess.org) (CC0). The cburnett pieces (by Colin M.L. Burnett, GPLv2+) come from the [lichess](https://github.com/lichess-org/lila) repository and are rasterized from SVG at startup. The sounds are from [Kenney](https://kenney.nl) (CC0). |
 
 ## Shortcuts
 

@@ -61,4 +61,18 @@ struct PlayerStats {
 // `games` should be in chronological order (the trend keeps that order).
 PlayerStats summarize(const std::vector<PlayerGame>& games);
 
+// --- Daily activity ---------------------------------------------------------------
+
+// Day number (days since 1970-01-01) of an ISO date "YYYY-MM-DD"; nullopt if malformed.
+std::optional<int> dayNumberFromIso(std::string_view date);
+// ISO date of a day number.
+std::string isoFromDayNumber(int day);
+
+struct Streaks {
+    int current = 0;  // days in a row up to today (or up to yesterday, if today is still empty)
+    int longest = 0;
+};
+// Streaks of consecutive days in `days` (day numbers, any order, duplicates allowed).
+Streaks computeStreaks(std::vector<int> days, int today);
+
 }  // namespace core

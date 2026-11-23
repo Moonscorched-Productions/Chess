@@ -1,6 +1,10 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <filesystem>
+#include <memory>
+#include <thread>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -14,6 +18,7 @@
 #include "chess/OpeningBook.h"
 #include "chess/Review.h"
 #include "engine/UciEngine.h"
+#include "storage/Explorer.h"
 #include "ui/BoardView.h"
 #include "ui/MoveTreeView.h"
 
@@ -28,6 +33,16 @@ class AnalysisScreen {
 public:
     // `book` (optional) names the opening of the line on the board.
     AnalysisScreen(app::Settings& settings, app::Assets& assets, const core::OpeningBook* book = nullptr);
+    ~AnalysisScreen();
+    AnalysisScreen(const AnalysisScreen&) = delete;
+    AnalysisScreen& operator=(const AnalysisScreen&) = delete;
+
+    // The game database the explorer reads (opened separately on a background thread).
+    void setLibrary(std::filesystem::path databaseFile);
+    // The explorer is rebuilt the next time it is shown (call after the library changed).
+    void markLibraryDirty() { explorerDirty_ = true; }
+    // Test aid: shows the Explorer tab.
+    void showExplorer() { wantExplorerTab_ = true; }
 
     // Processes engine output and keeps the right search running. Call once per frame.
     // `visible` tells whether the Analysis section is on screen; the engine rests otherwise.
@@ -98,6 +113,9 @@ private:
     // Square tints of the chosen board overlay for the current position.
     const std::vector<SquareTint>& overlayTints();
     void drawEvalGraph(ImVec2 size);
+    void drawExplorer(float height);
+    void startExplorerBuild();
+    void stopExplorerBuild();
     void drawButtons();
     void handleShortcuts();
 
@@ -154,6 +172,18 @@ private:
     std::optional<std::int64_t> libraryId_;
     bool settingsChanged_ = false;
 
+    // Explorer over the user's library, built on a worker thread.
+    std::filesystem::path libraryFile_;
+    std::unique_ptr<storage::ExplorerIndex> explorer_;
+    std::unique_ptr<storage::ExplorerIndex> explorerResult_;  // written by the worker
+    std::thread explorerThread_;
+    std::atomic<bool> explorerReady_{false};
+    std::atomic<bool> explorerCancel_{false};
+    bool explorerDirty_ = true;
+    bool explorerMineOnly_ = false;
+    bool wantExplorerTab_ = false;
+    std::string explorerNames_;  // the player names the index was built with
+    std::optional<core::Move> explorerMove_;  // clicked in the explorer, played after drawing
 };
 
 }  // namespace ui

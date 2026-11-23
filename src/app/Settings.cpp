@@ -144,6 +144,12 @@ Settings Settings::load(const std::filesystem::path& file) {
             readBool(value, settings.blindfold);
         } else if (key == "play_move_badges") {
             readBool(value, settings.playMoveBadges);
+        } else if (key == "coach_mode") {
+            readBool(value, settings.coachMode);
+        } else if (key == "clock_base_seconds") {
+            readInt(value, settings.clockBaseSeconds);
+        } else if (key == "clock_increment_seconds") {
+            readInt(value, settings.clockIncrementSeconds);
         } else if (key == "player_names") {
             settings.playerNames = std::string(value);
         } else if (key == "light_mode") {
@@ -209,6 +215,9 @@ bool Settings::save(const std::filesystem::path& file) const {
     out << "fullscreen=" << (fullscreen ? 1 : 0) << '\n';
     out << "blindfold=" << (blindfold ? 1 : 0) << '\n';
     out << "play_move_badges=" << (playMoveBadges ? 1 : 0) << '\n';
+    out << "coach_mode=" << (coachMode ? 1 : 0) << '\n';
+    out << "clock_base_seconds=" << clockBaseSeconds << '\n';
+    out << "clock_increment_seconds=" << clockIncrementSeconds << '\n';
     out << "player_names=" << playerNames << '\n';
     out << "light_mode=" << (lightMode ? 1 : 0) << '\n';
     out << "play_as=" << (playAs == ColorChoice::Black ? "black" : playAs == ColorChoice::Random ? "random" : "white") << '\n';
@@ -235,6 +244,8 @@ void Settings::sanitize() {
     elo = std::clamp(elo, 1320, 3190);
     thinkTimeMs = std::clamp(thinkTimeMs, 100, 30000);
     depthLimit = std::clamp(depthLimit, 0, 40);
+    clockBaseSeconds = std::clamp(clockBaseSeconds, 0, 3 * 3600);
+    clockIncrementSeconds = clockBaseSeconds == 0 ? 0 : std::clamp(clockIncrementSeconds, 0, 180);
     soundVolume = std::clamp(soundVolume, 0, 100);
     analysisLines = std::clamp(analysisLines, 1, 5);
     analysisThreads = std::clamp(analysisThreads, 0, 64);

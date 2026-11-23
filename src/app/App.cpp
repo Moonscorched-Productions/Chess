@@ -27,6 +27,7 @@
 #include "ui/EndgameScreen.h"
 #include "ui/OpeningsScreen.h"
 #include "ui/PlayScreen.h"
+#include "ui/GuessScreen.h"
 #include "ui/PuzzleScreen.h"
 #include "ui/QualityBadge.h"
 #include "ui/Common.h"
@@ -47,11 +48,12 @@ struct SectionInfo {
     const char* plannedFor;  // nullptr when the section is implemented
 };
 
-constexpr std::array<SectionInfo, 9> kSections = {{
+constexpr std::array<SectionInfo, 10> kSections = {{
     {Section::Play, "Play", nullptr},
     {Section::Analysis, "Analysis", nullptr},
     {Section::Review, "Game Review", nullptr},
     {Section::Puzzles, "Puzzles", nullptr},
+    {Section::Guess, "Guess the Move", nullptr},
     {Section::Openings, "Openings", nullptr},
     {Section::Endgames, "Endgames", nullptr},
     {Section::Library, "Game Library", nullptr},
@@ -136,6 +138,19 @@ Options Options::parse(int argc, char** argv) {
             options.blindfold = true;
         } else if (arg == "--badges") {
             options.moveBadges = true;
+        } else if (arg == "--practise" && hasValue) {
+            options.practise = argv[++i];
+        } else if (arg == "--explorer") {
+            options.openAnalysis = true;
+            options.explorer = true;
+        } else if (arg == "--guess" && hasValue) {
+            options.guessGame = std::atoi(argv[++i]);
+        } else if (arg == "--autoguess") {
+            options.autoGuess = true;
+        } else if (arg == "--coach") {
+            options.coach = true;
+        } else if (arg == "--clock" && hasValue) {
+            options.clock = argv[++i];
         } else if (arg == "--make-puzzles") {
             options.makePuzzles = true;
         } else if (arg == "--overlay" && hasValue) {
@@ -220,6 +235,12 @@ App::App(const Options& options)
     if (options_.fullscreen) settings_.fullscreen = true;
     if (options_.blindfold) settings_.blindfold = true;
     if (options_.moveBadges) settings_.playMoveBadges = true;
+    if (options_.coach) settings_.coachMode = true;
+    if (!options_.clock.empty()) {
+        settings_.clockBaseSeconds = std::atoi(options_.clock.c_str());
+        const std::size_t plus = options_.clock.find('+');
+        settings_.clockIncrementSeconds = plus == std::string::npos ? 0 : std::atoi(options_.clock.c_str() + plus + 1);
+    }
     if (!options_.compareEngine.empty()) settings_.compareEnginePath = options_.compareEngine;
     if (!options_.syzygyPath.empty()) settings_.syzygyPath = options_.syzygyPath;
     windowedSize_ = sf::Vector2u{options_.width, options_.height};
@@ -245,11 +266,22 @@ App::App(const Options& options)
     puzzleStore_ = storage::PuzzleStore::open(databaseFile);
     trainingStore_ = storage::TrainingStore::open(databaseFile);
     openingBook_.load(findUpwards("data") / "openings");
+    play_->setOpeningSources(&openingBook_, trainingStore_.get());
+    if (!options_.practise.empty()) play_->practiseOpening(options_.practise);
 
     analysis_ = std::make_unique<ui::AnalysisScreen>(settings_, assets_, &openingBook_);
+    if (store_) analysis_->setLibrary(databaseFile);
+    if (options_.explorer) analysis_->showExplorer();
     puzzles_ = std::make_unique<ui::PuzzleScreen>(settings_, assets_, puzzleStore_.get(), databaseFile,
                                                   findUpwards("data") / "puzzles" / "starter.csv");
     puzzles_->setAutoSolve(options_.autoSolve);
+    guess_ = std::make_unique<ui::GuessScreen>(settings_, assets_, store_.get(),
+                                               findUpwards("data") / "games" / "classics.pgn");
+    guess_->setAutoGuess(options_.autoGuess);
+    if (options_.guessGame >= 0) {
+        guess_->startClassic(static_cast<std::size_t>(options_.guessGame), core::Color::White);
+        section_ = Section::Guess;
+    }
     if (!options_.repertoireFile.empty() && trainingStore_) {
         std::ifstream input(pathFromUtf8(options_.repertoireFile), std::ios::binary);
         const std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
@@ -308,6 +340,7 @@ App::~App() {
     review_.reset();
     library_.reset();
     puzzles_.reset();
+    guess_.reset();
     openings_.reset();
     endgames_.reset();
     analysis_.reset();
@@ -335,11 +368,15 @@ void App::routeRequests() {
         review_->onPuzzlesStored(static_cast<int>(made->size()), added);
     }
     if (play_->consumeLibraryChanged()) {
+        analysis_->markLibraryDirty();
+        guess_->markDirty();
         library_->markDirty();
         review_->markDirty();
         statistics_->markDirty();  // the time played
     }
     if (library_->consumeChanged()) {
+        analysis_->markLibraryDirty();
+        guess_->markDirty();
         review_->markDirty();
         statistics_->markDirty();
     }
@@ -397,6 +434,7 @@ void App::routeRequests() {
             }
         }
         analysis_->onSaved(id);
+        analysis_->markLibraryDirty();
         library_->markDirty();
         review_->markDirty();
     }
@@ -415,6 +453,7 @@ void App::updatePresence() {
             text.details = "Looking at statistics";
             break;
         case Section::Puzzles: text = puzzles_->presence(); break;
+        case Section::Guess: text = guess_->presence(); break;
         case Section::Openings: text = openings_->presence(); break;
         case Section::Endgames:
             text.details = "Choosing an endgame to practise";
@@ -572,6 +611,7 @@ void App::frame() {
     library_->update();
     review_->update();
     if (section_ == Section::Puzzles) puzzles_->update();
+    if (section_ == Section::Guess) guess_->update();
     if (section_ == Section::Openings) openings_->update();
     routeRequests();
     updatePresence();
@@ -650,6 +690,8 @@ void App::drawContent(float x, float width, float height) {
         endgames_->draw();
     } else if (section_ == Section::Puzzles) {
         puzzles_->draw();
+    } else if (section_ == Section::Guess) {
+        guess_->draw();
     } else if (section_ == Section::Library) {
         library_->draw();
     } else if (section_ == Section::Review) {

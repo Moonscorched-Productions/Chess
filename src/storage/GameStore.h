@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "chess/GameTree.h"
@@ -66,6 +67,8 @@ public:
     // Adds time the app was open to today's total.
     void addUsage(std::int64_t seconds);
     Usage usage() const;
+    // Seconds per day ("YYYY-MM-DD", local time), oldest first.
+    std::vector<std::pair<std::string, std::int64_t>> usageByDay() const;
 
     // Newest games first.
     std::vector<GameSummary> list(const GameFilter& filter = {}) const;

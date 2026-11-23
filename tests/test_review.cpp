@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "chess/Guess.h"
 #include "chess/Review.h"
 
 using namespace core;
@@ -105,4 +106,16 @@ TEST_CASE("mate scores count as won or lost positions") {
     CHECK(classifyMove(f.tree, f.e4, strict) == MoveQuality::Blunder);
     CHECK(std::string(qualityName(MoveQuality::Blunder)) == "Blunder");
     CHECK(std::string(qualityName(MoveQuality::None)).empty());
+}
+
+TEST_CASE("guess the move: points") {
+    using core::guessPoints;
+    CHECK(guessPoints(true, 0.0, 90.0) == 5);   // the game move, whatever the scores say
+    CHECK(guessPoints(false, 60.0, 55.0) == 5); // better than the game move
+    CHECK(guessPoints(false, 55.0, 55.0) == 5);
+    CHECK(guessPoints(false, 53.0, 55.0) == 4);
+    CHECK(guessPoints(false, 50.0, 55.0) == 3);
+    CHECK(guessPoints(false, 45.0, 55.0) == 2);
+    CHECK(guessPoints(false, 40.0, 55.0) == 1);
+    CHECK(guessPoints(false, 10.0, 55.0) == 0);
 }

@@ -42,6 +42,9 @@ struct Settings {
     int elo = 1500;          // used with StrengthMode::Elo
     int thinkTimeMs = 1000;  // maximum time per engine move
     int depthLimit = 0;      // 0 = no extra depth limit
+    // Time control for games in Play: base time per side and increment per move (0 = untimed).
+    int clockBaseSeconds = 0;
+    int clockIncrementSeconds = 0;
 
     // Analysis
     int analysisLines = 3;       // engine lines shown (MultiPV), 1..5
@@ -60,6 +63,7 @@ struct Settings {
     bool fullscreen = false;
     bool blindfold = false;  // hide the pieces in Play and Puzzles
     bool playMoveBadges = false;  // judge every move in Play as it is made (Best, Mistake, ...)
+    bool coachMode = false;       // in Play, stop after a mistake or blunder and offer a take-back
 
     // New game defaults
     ColorChoice playAs = ColorChoice::White;

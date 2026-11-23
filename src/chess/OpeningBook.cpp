@@ -46,6 +46,10 @@ int OpeningBook::loadText(std::string_view tsv) {
         }
         if (!ok || game.ply() == 0) continue;
 
+        OpeningLine opening{std::string(eco), std::string(name), {}, std::string(moves)};
+        for (const MoveRecord& record : game.history()) opening.moves.push_back(record.uci);
+        lines_.push_back(std::move(opening));
+
         // Later (longer) tables may refine a name; keep the first one seen for a position.
         if (names_.try_emplace(positionKey(game.fen()), OpeningName{std::string(eco), std::string(name)}).second) ++added;
     }

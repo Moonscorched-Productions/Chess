@@ -63,6 +63,7 @@ enum class Status {
     DrawInsufficientMaterial,
     DrawAgreed,
     Resigned,
+    Timeout,  // a clock ran out (a draw if the other side cannot mate)
 };
 
 enum class Result { None, WhiteWins, BlackWins, Draw };

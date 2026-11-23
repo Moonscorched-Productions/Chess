@@ -1,7 +1,9 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <imgui.h>
@@ -37,11 +39,14 @@ private:
     void drawQualities();
     void drawOpenings();
     void drawNames();
+    void drawActivity();
 
     app::Settings& settings_;
     storage::ReviewStore* reviews_;
     storage::GameStore* gameStore_;
     storage::Usage usage_;
+    std::unordered_map<int, std::int64_t> secondsByDay_;  // day number -> seconds in the app
+    core::Streaks streaks_;
     std::vector<core::PlayerGame> games_;
     core::PlayerStats stats_;
     bool dirty_ = true;

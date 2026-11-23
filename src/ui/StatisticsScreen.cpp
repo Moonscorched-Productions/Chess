@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <utility>
@@ -10,6 +11,7 @@
 #include <imgui.h>
 
 #include "app/Theme.h"
+#include "chess/Repertoire.h"
 #include "ui/Common.h"
 #include "ui/QualityBadge.h"
 
@@ -63,6 +65,17 @@ void StatisticsScreen::reload() {
     if (reviews_ != nullptr) games_ = reviews_->playerGames(settings_.playerNames);
     stats_ = core::summarize(games_);
     usage_ = gameStore_ != nullptr ? gameStore_->usage() : storage::Usage{};
+    secondsByDay_.clear();
+    std::vector<int> days;
+    if (gameStore_ != nullptr) {
+        for (const auto& [date, seconds] : gameStore_->usageByDay()) {
+            if (const std::optional<int> day = core::dayNumberFromIso(date)) {
+                secondsByDay_[*day] += seconds;
+                days.push_back(*day);
+            }
+        }
+    }
+    streaks_ = core::computeStreaks(std::move(days), core::todayNumber());
 }
 
 namespace {
@@ -96,11 +109,10 @@ void StatisticsScreen::draw() {
     ImGui::BeginChild("##statistics", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
     if (stats_.games == 0) {
         ImGui::PushTextWrapPos(std::min(ImGui::GetContentRegionAvail().x, 720.0f));
-        if (usage_.totalSeconds > 0) {
-            ImGui::Text("Time in the app: %s  \xC2\xB7  today %s", formatPlayTime(usage_.totalSeconds).c_str(),
-                        formatPlayTime(usage_.todaySeconds).c_str());
-            ImGui::Spacing();
-        }
+        ImGui::PopTextWrapPos();
+        drawActivity();
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(std::min(ImGui::GetContentRegionAvail().x, 720.0f));
         ImGui::TextUnformatted("No reviewed games of yours yet.");
         ImGui::TextDisabled("Statistics are built from the games you review in Game Review. Games you play here "
                             "count automatically; for imported games, enter the names you play under below.");
@@ -114,6 +126,8 @@ void StatisticsScreen::draw() {
     }
 
     drawTiles();
+    ImGui::Spacing();
+    drawActivity();
     ImGui::Spacing();
 
     ImGui::BeginChild("##trend", ImVec2(0.0f, 190.0f), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
@@ -180,6 +194,88 @@ void StatisticsScreen::drawTiles() {
     std::snprintf(detail, sizeof(detail), "today %s  \xC2\xB7  %d %s", formatPlayTime(usage_.todaySeconds).c_str(),
                   usage_.days, usage_.days == 1 ? "day" : "days");
     tile("##tile-time", width, "Time in the app", total.c_str(), detail);
+}
+
+// A calendar of the last months, one square per day, shaded by the time spent in the app.
+void StatisticsScreen::drawActivity() {
+    constexpr float kCell = 13.0f;
+    constexpr float kGap = 3.0f;
+    constexpr float kStep = kCell + kGap;
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
+    const float height = 2.0f * style.WindowPadding.y + 2.0f * lineHeight + 7.0f * kStep + 4.0f;
+    ImGui::BeginChild("##activity", ImVec2(0.0f, height), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
+
+    ImGui::TextUnformatted("Activity");
+    ImGui::SameLine();
+    if (streaks_.current > 0) {
+        ImGui::TextColored(kAccentColor, "%d-day streak", streaks_.current);
+    } else {
+        ImGui::TextDisabled("No streak running: open the app today to start one");
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("  \xC2\xB7  longest %d %s  \xC2\xB7  today %s  \xC2\xB7  %s in total", streaks_.longest,
+                        streaks_.longest == 1 ? "day" : "days", formatPlayTime(usage_.todaySeconds).c_str(),
+                        formatPlayTime(usage_.totalSeconds).c_str());
+
+    const float labelWidth = ImGui::CalcTextSize("Wed").x + 8.0f;
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const int weeks = std::clamp(static_cast<int>((ImGui::GetContentRegionAvail().x - labelWidth) / kStep), 4, 53);
+    const int today = core::todayNumber();
+    const int weekday = (today + 3) % 7;  // 0 = Monday (1970-01-01 was a Thursday)
+    const int firstDay = today - weekday - (weeks - 1) * 7;
+    const ImVec2 grid(origin.x + labelWidth, origin.y + lineHeight);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const ImU32 labelColor = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    const char* dayLabels[7] = {"Mon", "", "Wed", "", "Fri", "", ""};
+    for (int row = 0; row < 7; ++row) {
+        if (*dayLabels[row] != '\0') {
+            drawList->AddText(ImVec2(origin.x, grid.y + row * kStep + (kCell - ImGui::GetTextLineHeight()) * 0.5f), labelColor,
+                              dayLabels[row]);
+        }
+    }
+    static const char* kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    int lastMonth = -1;
+    float lastLabelEnd = -1000.0f;
+    const ImVec4 accent = kAccentColor;
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    int hoveredDay = -1;
+    for (int week = 0; week < weeks; ++week) {
+        const int monday = firstDay + week * 7;
+        const int month = std::atoi(core::isoFromDayNumber(monday).substr(5, 2).c_str()) - 1;
+        const float x = grid.x + week * kStep;
+        if (month != lastMonth && month >= 0 && month < 12) {
+            if (x >= lastLabelEnd) {
+                drawList->AddText(ImVec2(x, origin.y), labelColor, kMonths[month]);
+                lastLabelEnd = x + ImGui::CalcTextSize(kMonths[month]).x + 6.0f;
+            }
+            lastMonth = month;
+        }
+        for (int row = 0; row < 7; ++row) {
+            const int day = monday + row;
+            if (day > today) continue;
+            const ImVec2 min(x, grid.y + row * kStep);
+            const ImVec2 max(min.x + kCell, min.y + kCell);
+            const auto it = secondsByDay_.find(day);
+            const std::int64_t seconds = it == secondsByDay_.end() ? 0 : it->second;
+            ImU32 color = ImGui::GetColorU32(ImGuiCol_FrameBg);
+            if (seconds > 0) {
+                const float strength = seconds < 15 * 60 ? 0.35f : seconds < 30 * 60 ? 0.55f : seconds < 60 * 60 ? 0.78f : 1.0f;
+                color = ImGui::ColorConvertFloat4ToU32(ImVec4(accent.x, accent.y, accent.z, strength));
+            }
+            drawList->AddRectFilled(min, max, color, 2.0f);
+            if (day == today) drawList->AddRect(min, max, ImGui::GetColorU32(ImGuiCol_Text), 2.0f);
+            if (mouse.x >= min.x && mouse.x < max.x + kGap && mouse.y >= min.y && mouse.y < max.y + kGap) hoveredDay = day;
+        }
+    }
+    ImGui::Dummy(ImVec2(labelWidth + weeks * kStep, lineHeight + 7.0f * kStep));
+    if (hoveredDay >= 0 && ImGui::IsWindowHovered()) {
+        const auto it = secondsByDay_.find(hoveredDay);
+        ImGui::SetTooltip("%s  \xC2\xB7  %s", core::isoFromDayNumber(hoveredDay).c_str(),
+                          it == secondsByDay_.end() ? "not opened" : formatPlayTime(it->second).c_str());
+    }
+    ImGui::EndChild();
 }
 
 // One point per game on a scale that always includes 100, with the average as a line.

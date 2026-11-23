@@ -13,7 +13,12 @@ namespace engine {
 struct SearchLimits {
     int moveTimeMs = 0;  // 0 = no time limit
     int depth = 0;       // 0 = no depth limit
-    // With both at 0 the search runs until stopSearch() is called.
+    // Clock times for a game with a time control (0 = not used); the engine budgets its time.
+    int whiteTimeMs = 0;
+    int blackTimeMs = 0;
+    int whiteIncrementMs = 0;
+    int blackIncrementMs = 0;
+    // With no limit at all the search runs until stopSearch() is called.
 };
 
 // One "info" line from the engine. Scores are from the point of view of the side to move.

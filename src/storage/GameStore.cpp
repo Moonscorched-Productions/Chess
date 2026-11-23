@@ -91,6 +91,14 @@ void GameStore::addUsage(std::int64_t seconds) {
     statement.step();
 }
 
+std::vector<std::pair<std::string, std::int64_t>> GameStore::usageByDay() const {
+    std::vector<std::pair<std::string, std::int64_t>> days;
+    Statement statement(*impl_->connection, "SELECT day, seconds FROM usage WHERE seconds > 0 ORDER BY day");
+    if (!statement.valid()) return days;
+    while (statement.step()) days.emplace_back(statement.text(0), statement.integer(1));
+    return days;
+}
+
 Usage GameStore::usage() const {
     Usage result;
     Statement statement(*impl_->connection,

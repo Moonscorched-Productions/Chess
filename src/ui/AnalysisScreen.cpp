@@ -15,6 +15,7 @@
 #include "app/Paths.h"
 #include "chess/Pgn.h"
 #include "chess/Position.h"
+#include "storage/GameStore.h"
 #include "ui/Common.h"
 #include "ui/EvalGraph.h"
 #include "ui/QualityBadge.h"
@@ -91,6 +92,134 @@ AnalysisScreen::AnalysisScreen(app::Settings& settings, app::Assets& assets, con
     treeView_.quality = [this](core::NodeId id) { return qualityOf(id); };
     treeView_.emptyHint = "Move a piece on the board to start a line, or paste a FEN or PGN.";
     goTo(kRootNode);
+}
+
+AnalysisScreen::~AnalysisScreen() { stopExplorerBuild(); }
+
+// --- Explorer ------------------------------------------------------------------
+
+void AnalysisScreen::setLibrary(std::filesystem::path databaseFile) {
+    libraryFile_ = std::move(databaseFile);
+    explorerDirty_ = true;
+}
+
+void AnalysisScreen::stopExplorerBuild() {
+    if (!explorerThread_.joinable()) return;
+    explorerCancel_ = true;
+    explorerThread_.join();
+    explorerCancel_ = false;
+    explorerReady_ = false;
+    explorerResult_.reset();
+}
+
+void AnalysisScreen::startExplorerBuild() {
+    stopExplorerBuild();
+    explorerDirty_ = false;
+    explorerNames_ = settings_.playerNames;
+    if (libraryFile_.empty()) return;
+    explorerThread_ = std::thread([this, file = libraryFile_, names = explorerNames_] {
+        // A connection of its own: the main thread keeps using its store meanwhile.
+        auto index = std::make_unique<storage::ExplorerIndex>();
+        if (const auto store = storage::GameStore::open(file)) *index = storage::buildExplorerIndex(*store, names, &explorerCancel_);
+        explorerResult_ = std::move(index);
+        explorerReady_ = true;
+    });
+}
+
+void AnalysisScreen::drawExplorer(float height) {
+    if ((explorerDirty_ || explorerNames_ != settings_.playerNames) && !explorerThread_.joinable()) startExplorerBuild();
+    if (explorerReady_) {
+        explorerThread_.join();
+        explorerReady_ = false;
+        explorer_ = std::move(explorerResult_);
+    }
+
+    ImGui::BeginChild("##explorer", ImVec2(0.0f, height), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+    ImGui::Checkbox("Only my games", &explorerMineOnly_);
+    ImGui::SetItemTooltip("Games where one side has one of your names (set them in Statistics)");
+    ImGui::SameLine();
+    if (explorerThread_.joinable()) {
+        ImGui::TextDisabled("Indexing your library%s", std::string(static_cast<std::size_t>(ImGui::GetTime() * 3.0) % 4, '.').c_str());
+    } else if (explorer_) {
+        const int count = explorerMineOnly_ ? explorer_->myGameCount() : explorer_->gameCount();
+        ImGui::TextDisabled("%d %s, first %d moves", count, count == 1 ? "game" : "games", storage::ExplorerIndex::kMaxPlies / 2);
+    }
+    if (libraryFile_.empty()) {
+        ImGui::TextDisabled("The game library is not available.");
+        ImGui::EndChild();
+        return;
+    }
+    if (!explorer_) {
+        ImGui::EndChild();
+        return;
+    }
+
+    const std::vector<storage::ExplorerMove> moves = explorer_->moves(position_.fen(), explorerMineOnly_);
+    if (moves.empty()) {
+        ImGui::Spacing();
+        ImGui::TextDisabled(explorerMineOnly_ ? "You have not reached this position in your games."
+                                              : "No game in your library reached this position.");
+        ImGui::EndChild();
+        return;
+    }
+    if (ImGui::BeginTable("##explorer-table", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("Move", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+        ImGui::TableSetupColumn("Games", ImGuiTableColumnFlags_WidthFixed, 56.0f);
+        ImGui::TableSetupColumn(explorerMineOnly_ ? "Your results" : "White / draw / Black");
+        ImGui::TableHeadersRow();
+        int total = 0;
+        for (const storage::ExplorerMove& move : moves) total += explorerMineOnly_ ? move.mine : move.games;
+        for (const storage::ExplorerMove& move : moves) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::PushID(move.uci.c_str());
+            if (ImGui::Selectable(move.san.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
+                explorerMove_ = core::parseUciMove(move.uci);
+            }
+            ImGui::PopID();
+            const int games = explorerMineOnly_ ? move.mine : move.games;
+            const int a = explorerMineOnly_ ? move.myWins : move.whiteWins;
+            const int b = explorerMineOnly_ ? move.myDraws : move.draws;
+            const int c = explorerMineOnly_ ? move.myLosses : move.blackWins;
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(explorerMineOnly_ ? "%d won  \xC2\xB7  %d drawn  \xC2\xB7  %d lost  (%d%% of your games here)"
+                                                    : "White won %d  \xC2\xB7  %d drawn  \xC2\xB7  Black won %d  (%d%% of games here)",
+                                  a, b, c, total > 0 ? games * 100 / total : 0);
+            }
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%d", games);
+            ImGui::TableSetColumnIndex(2);
+
+            // A bar split into the three outcomes (unfinished games leave a gap at the end).
+            const ImVec2 origin = ImGui::GetCursorScreenPos();
+            const float width = ImGui::GetContentRegionAvail().x;
+            const float barHeight = ImGui::GetTextLineHeight();
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+            const ImU32 colors[3] = {explorerMineOnly_ ? IM_COL32(96, 160, 48, 255) : IM_COL32(235, 235, 230, 255),
+                                     IM_COL32(140, 140, 135, 255),
+                                     explorerMineOnly_ ? IM_COL32(200, 70, 60, 255) : IM_COL32(40, 40, 38, 255)};
+            const int counts[3] = {a, b, c};
+            float x = origin.x;
+            drawList->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + barHeight), ImGui::GetColorU32(ImGuiCol_FrameBg), 3.0f);
+            for (int i = 0; i < 3; ++i) {
+                if (games == 0 || counts[i] == 0) continue;
+                const float w = width * static_cast<float>(counts[i]) / static_cast<float>(games);
+                drawList->AddRectFilled(ImVec2(x, origin.y), ImVec2(x + w, origin.y + barHeight), colors[i]);
+                char label[8];
+                std::snprintf(label, sizeof(label), "%d%%", counts[i] * 100 / games);
+                const ImVec2 size = ImGui::CalcTextSize(label);
+                if (size.x + 6.0f < w) {
+                    const ImU32 textColor = (i == 0 && !explorerMineOnly_) ? IM_COL32(30, 30, 28, 255) : IM_COL32(255, 255, 255, 255);
+                    drawList->AddText(ImVec2(x + (w - size.x) * 0.5f, origin.y), textColor, label);
+                }
+                x += w;
+            }
+            drawList->AddRect(origin, ImVec2(origin.x + width, origin.y + barHeight), ImGui::GetColorU32(ImGuiCol_Border));
+            ImGui::Dummy(ImVec2(width, barHeight));
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndChild();
 }
 
 // --- Engine ------------------------------------------------------------------
@@ -550,13 +679,23 @@ void AnalysisScreen::draw() {
     const float rowHeight = ImGui::GetFrameHeightWithSpacing();
     const float noticeHeight = notice_.empty() ? 0.0f : ImGui::GetTextLineHeightWithSpacing() * 2.0f;
     const float below = rowHeight * 5.0f + noticeHeight + style.ItemSpacing.y;
-    {
-        const MoveTreeActions actions = treeView_.draw(record_.tree, current_, std::max(ImGui::GetContentRegionAvail().y - below, 80.0f));
-        if (actions.clicked != kNoNode) goTo(actions.clicked);
-        // Edits are applied at the start of the next frame, outside the tree drawing.
-        if (actions.remove != kNoNode) pendingRemove_ = actions.remove;
-        if (actions.promote != kNoNode) pendingPromote_ = actions.promote;
-        if (actions.mainLine != kNoNode) pendingMainLine_ = actions.mainLine;
+    if (ImGui::BeginTabBar("##panel-tabs")) {
+        const float listHeight = std::max(ImGui::GetContentRegionAvail().y - below - rowHeight, 80.0f);
+        if (ImGui::BeginTabItem("Moves")) {
+            const MoveTreeActions actions = treeView_.draw(record_.tree, current_, listHeight);
+            if (actions.clicked != kNoNode) goTo(actions.clicked);
+            // Edits are applied at the start of the next frame, outside the tree drawing.
+            if (actions.remove != kNoNode) pendingRemove_ = actions.remove;
+            if (actions.promote != kNoNode) pendingPromote_ = actions.promote;
+            if (actions.mainLine != kNoNode) pendingMainLine_ = actions.mainLine;
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Explorer", nullptr, std::exchange(wantExplorerTab_, false) ? ImGuiTabItemFlags_SetSelected : 0)) {
+            drawExplorer(listHeight);
+            ImGui::EndTabItem();
+        }
+        ImGui::SetItemTooltip("Moves played from this position in your library games");
+        ImGui::EndTabBar();
     }
 
     // Comment on the current move.
@@ -579,6 +718,7 @@ void AnalysisScreen::draw() {
     ImGui::EndChild();
 
     if (move) playMove(*move);
+    if (explorerMove_) playMove(*std::exchange(explorerMove_, std::nullopt));
 }
 
 void AnalysisScreen::drawEnginePanel() {

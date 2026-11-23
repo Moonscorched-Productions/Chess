@@ -5,6 +5,7 @@
 #include <string>
 
 #include "chess/Pgn.h"
+#include "storage/Explorer.h"
 #include "storage/GameStore.h"
 
 using namespace storage;
@@ -350,4 +351,44 @@ TEST_CASE("training store: repertoires, cards and endgame results") {
         CHECK(progress.at("kq-k").successes == 1);
         CHECK(progress.at("lucena").successes == 1);
     }
+}
+
+TEST_CASE("explorer over the library") {
+    std::string error;
+    const auto store = GameStore::open(":memory:", &error);
+    REQUIRE_MESSAGE(store != nullptr, error);
+    store->add(game("You", "Engine", "1-0", "1. e4 e5 2. Nf3 Nc6"), "play");
+    store->add(game("Engine", "You", "1-0", "1. e4 c5 2. Nf3"), "play");
+    store->add(game("Carlsen", "Caruana", "1/2-1/2", "1. d4 d5"), "import");
+    store->add(game("A", "B", "0-1", "1. e4 e5 2. Bc4"), "import");
+
+    const ExplorerIndex index = buildExplorerIndex(*store, "You");
+    CHECK(index.gameCount() == 4);
+    CHECK(index.myGameCount() == 2);
+
+    const std::string start(core::kStartFen);
+    const auto all = index.moves(start, false);
+    REQUIRE(all.size() == 2);
+    CHECK(all[0].san == "e4");
+    CHECK(all[0].games == 3);
+    CHECK(all[0].whiteWins == 2);
+    CHECK(all[0].blackWins == 1);
+    CHECK(all[0].mine == 2);
+    CHECK(all[0].myWins == 1);   // won as White
+    CHECK(all[0].myLosses == 1); // lost as Black
+    CHECK(all[1].san == "d4");
+    CHECK(all[1].draws == 1);
+
+    const auto mine = index.moves(start, true);
+    REQUIRE(mine.size() == 1);
+    CHECK(mine[0].san == "e4");
+
+    // After 1. e4 e5 (reached in two games): Nf3 and Bc4, once each.
+    core::Game position;
+    REQUIRE(position.makeUciMove("e2e4"));
+    REQUIRE(position.makeUciMove("e7e5"));
+    const auto replies = index.moves(position.fen(), false);
+    REQUIRE(replies.size() == 2);
+    CHECK(replies[0].games == 1);
+    CHECK(index.moves("8/8/8/4k3/8/8/4K3/8 w - - 0 1", false).empty());
 }

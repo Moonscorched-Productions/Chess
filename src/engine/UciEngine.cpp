@@ -1,5 +1,6 @@
 #include "engine/UciEngine.h"
 
+#include <algorithm>
 #include <atomic>
 #include <charconv>
 #include <deque>
@@ -318,7 +319,14 @@ int UciEngine::search(std::string_view startFen, std::string_view uciMoves, cons
     std::string go = "go";
     if (limits.depth > 0) go += " depth " + std::to_string(limits.depth);
     if (limits.moveTimeMs > 0) go += " movetime " + std::to_string(limits.moveTimeMs);
-    if (limits.depth <= 0 && limits.moveTimeMs <= 0) go += " infinite";
+    const bool clocks = limits.whiteTimeMs > 0 || limits.blackTimeMs > 0;
+    if (clocks) {
+        go += " wtime " + std::to_string(std::max(limits.whiteTimeMs, 1)) + " btime " +
+              std::to_string(std::max(limits.blackTimeMs, 1));
+        if (limits.whiteIncrementMs > 0) go += " winc " + std::to_string(limits.whiteIncrementMs);
+        if (limits.blackIncrementMs > 0) go += " binc " + std::to_string(limits.blackIncrementMs);
+    }
+    if (limits.depth <= 0 && limits.moveTimeMs <= 0 && !clocks) go += " infinite";
     impl_->send(go);
     return id;
 }

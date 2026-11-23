@@ -32,6 +32,7 @@ class OpeningsScreen;
 class EndgameScreen;
 class PlayScreen;
 class PuzzleScreen;
+class GuessScreen;
 class ReviewScreen;
 class StatisticsScreen;
 class SettingsScreen;
@@ -39,7 +40,7 @@ class SettingsScreen;
 
 namespace app {
 
-enum class Section { Play, Analysis, Review, Puzzles, Openings, Endgames, Library, Statistics, Settings };
+enum class Section { Play, Analysis, Review, Puzzles, Guess, Openings, Endgames, Library, Statistics, Settings };
 
 // Command line options. All of them are aids for automated checks.
 struct Options {
@@ -54,6 +55,8 @@ struct Options {
     bool openAnalysis = false;       // --analysis: start on the Analysis section
     bool openLibrary = false;        // --library: start on the Game Library section
     bool openPuzzles = false;        // --puzzles: start on the Puzzles section
+    int guessGame = -1;              // --guess <n>: start guessing bundled game n
+    bool autoGuess = false;          // --autoguess: guess random moves (test aid)
     bool openOpenings = false;       // --openings: start on the Openings section
     bool openEndgames = false;       // --endgames: start on the Endgames section
     bool openReview = false;         // --review: start on Game Review (and review the --pgn game, if given)
@@ -64,6 +67,10 @@ struct Options {
     bool fullscreen = false;         // --fullscreen: start in fullscreen
     bool blindfold = false;          // --blindfold: hide the pieces in Play and Puzzles
     bool moveBadges = false;         // --badges: judge every move in Play
+    bool coach = false;              // --coach: coach mode in Play
+    bool explorer = false;           // --explorer: open Analysis on the Explorer tab
+    std::string practise;            // --practise <name>: practise the first opening matching the name
+    std::string clock;               // --clock 300+3: time control for Play (seconds + increment)
     bool makePuzzles = false;        // --make-puzzles: make puzzles from the reviewed --pgn game
     int overlay = 0;                 // --overlay <n>: board overlay in Analysis (1 control, 2 loose pieces, 3 activity)
     std::string fen;                 // --fen <fen>: load this position into Analysis
@@ -142,6 +149,7 @@ private:
     std::unique_ptr<ui::AnalysisScreen> analysis_;
     std::unique_ptr<ui::LibraryScreen> library_;
     std::unique_ptr<ui::PuzzleScreen> puzzles_;
+    std::unique_ptr<ui::GuessScreen> guess_;
     std::unique_ptr<ui::OpeningsScreen> openings_;
     std::unique_ptr<ui::EndgameScreen> endgames_;
     std::unique_ptr<ui::ReviewScreen> review_;

@@ -1,6 +1,7 @@
 #include "ui/PlayScreen.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -14,7 +15,9 @@
 #include "app/GameAnalyzer.h"
 #include "app/Paths.h"
 #include "chess/Pgn.h"
+#include "chess/OpeningBook.h"
 #include "storage/GameStore.h"
+#include "storage/TrainingStore.h"
 #include "ui/Common.h"
 #include "ui/QualityBadge.h"
 
@@ -126,6 +129,12 @@ void PlayScreen::requestEngineMove() {
     engine::SearchLimits limits;
     limits.moveTimeMs = settings_.thinkTimeMs;
     limits.depth = settings_.depthLimit;
+    if (timed()) {
+        // With a clock the engine plans its own time; its strength settings still apply.
+        const int depth = limits.depth;
+        limits = clockLimits();
+        limits.depth = depth;
+    }
     if (challenge_) {
         limits.depth = 0;
         limits.moveTimeMs = std::max(settings_.thinkTimeMs, 600);
@@ -262,27 +271,49 @@ void PlayScreen::update() {
         }
     }
 
+    // The analysis behind badges and the coach runs first, so the coach can hold the reply.
+    syncBadges();
+    badgeAnalyzer_.update();
+    badgeAnalyzer_.takeFinished();
+    const bool held = coachHolds();
+
     // Play the engine's answer once the minimum delay has passed, so instant
     // replies do not land in the same frame as the user's move.
-    if (pendingMove_ && Clock::now() >= moveNotBefore_) {
+    if (pendingMove_ && Clock::now() >= moveNotBefore_ && !held) {
         const std::string move = *pendingMove_;
         pendingMove_.reset();
         if (engineToMove()) {
             if (game_.makeUciMove(move)) {
                 board_.clearInteraction();
-                playSoundForLastMove();
+                afterMove();
             } else {
                 engineError_ = "The engine returned an illegal move (" + move + ").";
             }
         }
     }
 
-    if (engineToMove() && pendingSearch_ == 0 && !pendingMove_ && engineError_.empty() &&
-        engine_.state() == State::Ready) {
-        requestEngineMove();
+    // Taking moves back into the book resumes the practice.
+    if (book_ && book_->left) {
+        const core::NodeId node = bookNode();
+        if (node != core::kNoNode && !book_->tree.node(node).children.empty()) {
+            book_->left = false;
+            book_->note.clear();
+        }
     }
 
-    if (autoplay_ && humanCanMove()) {
+    if (engineToMove() && pendingSearch_ == 0 && !pendingMove_) {
+        // From the opening being practised, the engine answers from the book.
+        if (const std::optional<std::string> book = bookMove()) {
+            pendingMove_ = *book;
+            moveNotBefore_ = Clock::now() + std::chrono::milliseconds(500);
+        } else if (engineError_.empty() && engine_.state() == State::Ready) {
+            requestEngineMove();
+        }
+    }
+
+    updateClocks(held);
+
+    if (autoplay_ && humanCanMove() && !held) {
         const Clock::time_point now = Clock::now();
         if (autoplayAt_ == Clock::time_point{}) {
             autoplayAt_ = now + std::chrono::milliseconds(120);
@@ -296,12 +327,174 @@ void PlayScreen::update() {
         }
     }
 
-    syncBadges();
-    badgeAnalyzer_.update();
-    badgeAnalyzer_.takeFinished();
-
     if (game_.isOver()) saveFinishedGame();
     checkChallenge();
+}
+
+// --- Clocks ------------------------------------------------------------------
+
+void PlayScreen::resetClocks(int baseSeconds, int incrementSeconds) {
+    clockBaseMs_ = baseSeconds * 1000.0;
+    clockIncrementMs_ = baseSeconds > 0 ? incrementSeconds * 1000.0 : 0.0;
+    remainingMs_ = {clockBaseMs_, clockBaseMs_};
+    clockAtPly_.assign(static_cast<std::size_t>(game_.ply()) + 1, remainingMs_);
+    clockTick_ = Clock::now();
+}
+
+void PlayScreen::updateClocks(bool paused) {
+    const Clock::time_point now = Clock::now();
+    const double elapsed = std::chrono::duration<double, std::milli>(now - clockTick_).count();
+    clockTick_ = now;
+    clocksPaused_ = paused;
+    // The clocks start once both sides have made a move, and stop while the coach talks.
+    if (!timed() || game_.isOver() || game_.ply() < 2 || paused) return;
+    const Color side = game_.sideToMove();
+    double& left = remainingMs_[side == Color::White ? 0 : 1];
+    left -= std::min(elapsed, 1000.0);  // a stalled frame or a sleeping machine costs a second at most
+    if (left > 0.0) return;
+    left = 0.0;
+    cancelEngineMove();
+    coach_ = {};
+    game_.flag(side);
+    if (settings_.soundEnabled) assets_.play(app::SoundId::GameEnd, settings_.soundVolume);
+}
+
+void PlayScreen::recordClocks() {
+    if (!timed()) return;
+    // The side that just moved gets its increment, once the clocks are running.
+    if (game_.ply() > 2) {
+        remainingMs_[game_.sideToMove() == Color::White ? 1 : 0] += clockIncrementMs_;
+    }
+    clockAtPly_.resize(static_cast<std::size_t>(game_.ply()) + 1);
+    clockAtPly_[static_cast<std::size_t>(game_.ply())] = remainingMs_;
+}
+
+void PlayScreen::restoreClocks() {
+    if (!timed()) return;
+    const auto ply = static_cast<std::size_t>(game_.ply());
+    if (ply < clockAtPly_.size()) remainingMs_ = clockAtPly_[ply];
+}
+
+engine::SearchLimits PlayScreen::clockLimits() const {
+    engine::SearchLimits limits;
+    limits.whiteTimeMs = static_cast<int>(remainingMs_[0]);
+    limits.blackTimeMs = static_cast<int>(remainingMs_[1]);
+    limits.whiteIncrementMs = static_cast<int>(clockIncrementMs_);
+    limits.blackIncrementMs = static_cast<int>(clockIncrementMs_);
+    return limits;
+}
+
+std::string PlayScreen::timeControlText() const {
+    if (!timed()) return "-";
+    return std::to_string(static_cast<int>(clockBaseMs_ / 1000.0)) + "+" + std::to_string(static_cast<int>(clockIncrementMs_ / 1000.0));
+}
+
+// --- Coach -------------------------------------------------------------------
+
+bool PlayScreen::coachHolds() {
+    if (!settings_.coachMode || !againstEngine_ || game_.isOver() || game_.history().empty() ||
+        game_.sideToMove() == humanColor_) {
+        return false;
+    }
+    // The user's move is the last one; its node in the analysed tree identifies it.
+    const std::size_t index = game_.history().size() - 1;
+    if (index >= badgeLine_.size()) return true;  // not in the tree yet: next frame
+    const core::NodeId node = badgeLine_[index];
+    if (coach_.node != node) coach_ = Coach{node, CoachState::Checking, Clock::now()};
+
+    switch (coach_.state) {
+        case CoachState::Cleared: return false;
+        case CoachState::Warned: return true;
+        case CoachState::Checking: break;
+    }
+    const core::MoveQuality quality = judgedQuality(index);
+    if (quality == core::MoveQuality::None) {
+        // No verdict without an engine, or when it takes far too long: play on.
+        if (!badgeAnalyzer_.error().empty() || Clock::now() - coach_.since > std::chrono::seconds(12)) {
+            coach_.state = CoachState::Cleared;
+            return false;
+        }
+        return true;
+    }
+    if (quality == core::MoveQuality::Mistake || quality == core::MoveQuality::Blunder) {
+        coach_.state = CoachState::Warned;
+        coach_.quality = quality;
+        coach_.better.reset();
+        coach_.betterSan.clear();
+        const core::TreeNode& before = badgeTree_.node(badgeTree_.node(node).parent);
+        core::Game scratch;
+        scratch.setEnforceDraws(false);
+        if (!before.bestMove.empty() && scratch.reset(before.fen) && scratch.makeUciMove(before.bestMove)) {
+            coach_.better = scratch.history().back().move;
+            coach_.betterSan = scratch.history().back().san;
+        }
+        if (settings_.soundEnabled) assets_.play(app::SoundId::GameEnd, settings_.soundVolume / 2);
+        return true;
+    }
+    coach_.state = CoachState::Cleared;
+    return false;
+}
+
+// --- Opening practice --------------------------------------------------------
+
+core::NodeId PlayScreen::bookNode() const {
+    if (!book_) return core::kNoNode;
+    core::NodeId node = core::kRootNode;
+    for (const core::MoveRecord& played : game_.history()) {
+        core::NodeId next = core::kNoNode;
+        for (const core::NodeId child : book_->tree.node(node).children) {
+            if (book_->tree.node(child).record.uci == played.uci) next = child;
+        }
+        if (next == core::kNoNode) return core::kNoNode;
+        node = next;
+    }
+    return node;
+}
+
+std::optional<std::string> PlayScreen::bookMove() {
+    const core::NodeId node = bookNode();
+    if (node == core::kNoNode) return std::nullopt;
+    const std::vector<core::NodeId>& children = book_->tree.node(node).children;
+    if (children.empty()) return std::nullopt;
+    std::uniform_int_distribution<std::size_t> pick(0, children.size() - 1);
+    return book_->tree.node(children[pick(rng_)]).record.uci;
+}
+
+void PlayScreen::checkBookAfterUserMove() {
+    if (!book_ || book_->left) return;
+    const std::vector<core::MoveRecord>& history = game_.history();
+    if (history.empty()) return;
+    // The book position before the user's move.
+    const core::GameTree& tree = book_->tree;
+    core::NodeId node = core::kRootNode;
+    for (std::size_t i = 0; i + 1 < history.size() && node != core::kNoNode; ++i) {
+        core::NodeId next = core::kNoNode;
+        for (const core::NodeId child : tree.node(node).children) {
+            if (tree.node(child).record.uci == history[i].uci) next = child;
+        }
+        node = next;
+    }
+    if (node == core::kNoNode) return;
+
+    const std::vector<core::NodeId>& children = tree.node(node).children;
+    core::NodeId played = core::kNoNode;
+    for (const core::NodeId child : children) {
+        if (tree.node(child).record.uci == history.back().uci) played = child;
+    }
+    if (children.empty() || (played != core::kNoNode && tree.node(played).children.empty())) {
+        book_->left = true;
+        book_->note = "End of the prepared line after " + std::to_string(game_.fullMoveNumber() - (game_.sideToMove() == Color::White ? 1 : 0)) +
+                      " moves. You are on your own now.";
+    } else if (played == core::kNoNode) {
+        book_->left = true;
+        std::string expected;
+        for (const core::NodeId child : children) {
+            if (!expected.empty()) expected += ", ";
+            expected += tree.node(child).record.san;
+        }
+        book_->note = "You left the " + std::string(book_->fromRepertoire ? "repertoire" : "opening") + " with " +
+                      history.back().san + ". It expected " + expected + ".";
+    }
 }
 
 void PlayScreen::updatePlayTime() {
@@ -316,8 +509,10 @@ void PlayScreen::updatePlayTime() {
 // --- Move badges -------------------------------------------------------------
 
 void PlayScreen::syncBadges() {
-    const bool turnedOn = settings_.playMoveBadges && !badgesOn_;
-    badgesOn_ = settings_.playMoveBadges;
+    // The coach needs the same judgements as the badges.
+    const bool wanted = settings_.playMoveBadges || (settings_.coachMode && againstEngine_);
+    const bool turnedOn = wanted && !badgesOn_;
+    badgesOn_ = wanted;
     if (!badgesOn_) {
         badgeAnalyzer_.stop();
         return;
@@ -358,9 +553,11 @@ void PlayScreen::syncBadges() {
 }
 
 core::MoveQuality PlayScreen::badgeQuality(std::size_t index) const {
-    if (!settings_.playMoveBadges || index >= badgeLine_.size() || !badgeTree_.contains(badgeLine_[index])) {
-        return core::MoveQuality::None;
-    }
+    return settings_.playMoveBadges ? judgedQuality(index) : core::MoveQuality::None;
+}
+
+core::MoveQuality PlayScreen::judgedQuality(std::size_t index) const {
+    if (!badgesOn_ || index >= badgeLine_.size() || !badgeTree_.contains(badgeLine_[index])) return core::MoveQuality::None;
     return core::classifyMove(badgeTree_, badgeLine_[index]);
 }
 
@@ -378,6 +575,8 @@ core::GameRecord PlayScreen::currentRecord() const {
     record.setTag("Site", "Chess Desktop");
     record.setTag("Date", core::pgnDateToday());
     record.setTag("Round", "-");
+    record.setTag("TimeControl", timeControlText());
+    if (book_) record.setTag("Annotator", "Practised: " + book_->name);
     if (againstEngine_) {
         record.setTag("White", humanColor_ == Color::White ? "You" : engineName);
         record.setTag("Black", humanColor_ == Color::Black ? "You" : engineName);
@@ -388,6 +587,7 @@ core::GameRecord PlayScreen::currentRecord() const {
     const char* termination = nullptr;
     switch (game_.status()) {
         case core::Status::Resigned: termination = "resignation"; break;
+        case core::Status::Timeout: termination = "time forfeit"; break;
         case core::Status::DrawAgreed: termination = "draw agreed"; break;
         case core::Status::DrawRepetition: termination = "threefold repetition"; break;
         case core::Status::DrawFiftyMove: termination = "fifty-move rule"; break;
@@ -416,6 +616,7 @@ void PlayScreen::saveFinishedGame() {
 
 void PlayScreen::startChallenge(const core::EndgamePosition& position) {
     startNewGame(true, position.userColor == Color::White ? app::ColorChoice::White : app::ColorChoice::Black, position.fen);
+    resetClocks(0, 0);  // training positions are untimed
     challenge_ = Challenge{position.id, position.name, position.goal};
     challengeReported_ = false;
     applyEngineOptions();  // the strength depends on the challenge
@@ -524,6 +725,9 @@ void PlayScreen::startNewGame(bool againstEngine, app::ColorChoice playAs, const
     badgeTree_ = core::GameTree(game_.startFen());
     badgeLine_.clear();
     badgesOn_ = false;  // the next update starts the analysis again if badges are on
+    coach_ = {};
+    book_.reset();
+    resetClocks(settings_.clockBaseSeconds, settings_.clockIncrementSeconds);
 
     if (!againstEngine_) return;
     const engine::UciEngine::State state = engine_.state();
@@ -541,6 +745,12 @@ void PlayScreen::playMove(core::Move move) {
     if (!game_.makeMove(move)) return;
     notice_.clear();
     board_.clearInteraction();
+    afterMove();
+    checkBookAfterUserMove();
+}
+
+void PlayScreen::afterMove() {
+    recordClocks();
     playSoundForLastMove();
 }
 
@@ -564,6 +774,7 @@ void PlayScreen::undo() {
     // Against the engine, take back the reply as well so it is the user's turn again.
     if (againstEngine_ && game_.sideToMove() != humanColor_ && game_.canUndo()) game_.undo();
     board_.clearInteraction();
+    restoreClocks();
 }
 
 void PlayScreen::redo() {
@@ -573,6 +784,7 @@ void PlayScreen::redo() {
     game_.redo();
     if (againstEngine_ && game_.sideToMove() != humanColor_ && game_.canRedo()) game_.redo();
     board_.clearInteraction();
+    restoreClocks();
 }
 
 void PlayScreen::markDraw() {
@@ -617,10 +829,18 @@ std::string PlayScreen::statusText() const {
         case core::Status::Resigned:
             return std::string(game_.result() == core::Result::WhiteWins ? "Black" : "White") + " resigned  \xC2\xB7  " +
                    winner() + " wins";
+        case core::Status::Timeout:
+            // The side to move is the one whose clock ran out.
+            return std::string(colorName(game_.sideToMove())) + " ran out of time  \xC2\xB7  " +
+                   (game_.result() == core::Result::Draw ? std::string("draw") : std::string(winner()) + " wins");
         case core::Status::Ongoing: break;
     }
     if (!againstEngine_) return std::string(colorName(game_.sideToMove())) + " to move";
     if (game_.sideToMove() == humanColor_) return "Your move";
+    if (settings_.coachMode && coach_.node != core::kNoNode && coach_.state == CoachState::Checking) {
+        return "Coach is checking your move" + std::string(static_cast<std::size_t>(ImGui::GetTime() * 3.0) % 4, '.');
+    }
+    if (settings_.coachMode && coach_.state == CoachState::Warned) return "Coach: think again?";
     if (!engineError_.empty()) return "Engine unavailable";
     if (engine_.state() == engine::UciEngine::State::Starting) return "Starting engine...";
     return "Computer is thinking" + std::string(static_cast<std::size_t>(ImGui::GetTime() * 3.0) % 4, '.');
@@ -655,6 +875,11 @@ void PlayScreen::draw() {
         if (const core::MoveQuality quality = badgeQuality(lastIndex); quality != core::MoveQuality::None) {
             options.badges.push_back(BoardBadge{game_.history().back().move.to, quality});
         }
+    }
+    if (settings_.coachMode && coach_.state == CoachState::Warned && !game_.isOver() && !options.hidePieces) {
+        const core::Move played = game_.history().back().move;
+        if (options.badges.empty()) options.badges.push_back(BoardBadge{played.to, coach_.quality});
+        if (coach_.better) options.arrows.push_back(BoardArrow{coach_.better->from, coach_.better->to, IM_COL32(96, 160, 48, 215)});
     }
     if (hintLevel_ > 0 && hintMove_ && humanCanMove()) {
         options.highlights.push_back(hintMove_->from);
@@ -728,9 +953,93 @@ void PlayScreen::drawPlayerBar(Color color, float width) {
         drawList->AddText(ImVec2(x, ImGui::GetWindowPos().y + textY), ImGui::GetColorU32(ImGuiCol_TextDisabled), text);
     }
 
+    if (timed()) drawClock(color, ImGui::GetWindowPos().x + width);
+
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::PopID();
+}
+
+void PlayScreen::drawClock(Color color, float right) {
+    const double ms = remainingMs_[color == Color::White ? 0 : 1];
+    char text[32];
+    const long seconds = static_cast<long>(std::ceil(ms / 1000.0));
+    if (ms < 10000.0) {
+        std::snprintf(text, sizeof(text), "0:%04.1f", std::max(ms, 0.0) / 1000.0);
+    } else if (seconds >= 3600) {
+        std::snprintf(text, sizeof(text), "%ld:%02ld:%02ld", seconds / 3600, seconds / 60 % 60, seconds % 60);
+    } else {
+        std::snprintf(text, sizeof(text), "%ld:%02ld", seconds / 60, seconds % 60);
+    }
+    const bool running = !game_.isOver() && !clocksPaused_ && game_.ply() >= 2 && game_.sideToMove() == color;
+    const bool low = ms < std::min(20000.0, clockBaseMs_ * 0.1 + 1.0);
+
+    const ImVec2 size = ImGui::CalcTextSize(text);
+    const float padX = 10.0f;
+    const ImVec2 min(right - size.x - 2.0f * padX, ImGui::GetWindowPos().y + 2.0f);
+    const ImVec2 max(right, ImGui::GetWindowPos().y + kBarHeight - 2.0f);
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const ImU32 background = low && running ? IM_COL32(190, 50, 40, 255)
+                             : running      ? ImGui::GetColorU32(ImGuiCol_ButtonActive)
+                                            : ImGui::GetColorU32(ImGuiCol_FrameBg);
+    drawList->AddRectFilled(min, max, background, 4.0f);
+    const ImU32 textColor = running ? IM_COL32(255, 255, 255, 255)
+                            : low   ? IM_COL32(220, 80, 70, 255)
+                                    : ImGui::GetColorU32(ImGuiCol_Text);
+    drawList->AddText(ImVec2(min.x + padX, (min.y + max.y - size.y) * 0.5f), textColor, text);
+}
+
+void PlayScreen::drawCoach() {
+    if (!settings_.coachMode || coach_.state != CoachState::Warned || game_.isOver()) return;
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, (qualityColor(coach_.quality) & ~IM_COL32_A_MASK) | (48u << IM_COL32_A_SHIFT));
+    ImGui::BeginChild("##coach", ImVec2(0.0f, 0.0f), ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_AutoResizeY);
+    const std::string& san = game_.history().back().san;
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::Text("%s was %s.", san.c_str(), coach_.quality == core::MoveQuality::Blunder ? "a blunder" : "a mistake");
+    if (!coach_.betterSan.empty()) {
+        ImGui::TextDisabled("%s was stronger (the green arrow). Take the move back and look again?", coach_.betterSan.c_str());
+    } else {
+        ImGui::TextDisabled("Take the move back and look again?");
+    }
+    ImGui::PopTextWrapPos();
+    const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    if (ImGui::Button("Take back", ImVec2(half, 0.0f))) undo();
+    ImGui::SameLine();
+    if (ImGui::Button("Play on", ImVec2(half, 0.0f))) coach_.state = CoachState::Cleared;
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+}
+
+PlayScreen::Book PlayScreen::bookFromLine(const core::OpeningLine& line) {
+    Book book;
+    book.name = line.eco + "  " + line.name;
+    core::Game replay;
+    replay.setEnforceDraws(false);
+    core::NodeId node = core::kRootNode;
+    for (const std::string& uci : line.moves) {
+        const std::optional<core::Move> move = core::parseUciMove(uci);
+        if (!move) break;
+        const core::NodeId next = core::playMove(book.tree, node, replay, *move);
+        if (next == core::kNoNode) break;
+        node = next;
+    }
+    return book;
+}
+
+bool PlayScreen::practiseOpening(std::string_view search) {
+    if (openingBook_ == nullptr) return false;
+    for (const core::OpeningLine& line : openingBook_->lines()) {
+        if (line.name.find(search) == std::string::npos) continue;
+        startNewGame(true, settings_.playAs, std::string(core::kStartFen));
+        book_ = bookFromLine(line);
+        return true;
+    }
+    return false;
+}
+
+void PlayScreen::setOpeningSources(const core::OpeningBook* book, storage::TrainingStore* repertoires) {
+    openingBook_ = book;
+    repertoires_ = repertoires;
 }
 
 void PlayScreen::drawSidePanel(float width, float height) {
@@ -759,6 +1068,14 @@ void PlayScreen::drawSidePanel(float width, float height) {
         ImGui::TextDisabled("%s", notice_.c_str());
         ImGui::PopTextWrapPos();
     }
+
+    if (book_) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("Practising: %s", book_->name.c_str());
+        if (!book_->note.empty()) ImGui::TextDisabled("%s", book_->note.c_str());
+        ImGui::PopTextWrapPos();
+    }
+    drawCoach();
 
     if (!hintError_.empty() && hintLevel_ > 0) {
         ImGui::PushStyleColor(ImGuiCol_Text, kErrorColor);
@@ -829,6 +1146,14 @@ void PlayScreen::drawSidePanel(float width, float height) {
 
     if (ImGui::Checkbox("Move badges", &settings_.playMoveBadges)) settingsChanged_ = true;
     ImGui::SetItemTooltip("Judge every move as it is played (Best, Mistake, Blunder, ...)");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!againstEngine_);
+    if (ImGui::Checkbox("Coach", &settings_.coachMode)) {
+        settingsChanged_ = true;
+        coach_ = {};
+    }
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("After a mistake or blunder, the computer waits and offers to take your move back");
     if (settings_.playMoveBadges) {
         if (!badgeAnalyzer_.error().empty()) {
             ImGui::SameLine();
@@ -924,6 +1249,16 @@ void PlayScreen::openNewGameDialog() {
     draft_.elo = settings_.elo;
     draft_.thinkTimeMs = settings_.thinkTimeMs;
     draft_.depthLimit = settings_.depthLimit;
+    draft_.clockBaseSeconds = settings_.clockBaseSeconds;
+    draft_.clockIncrementSeconds = settings_.clockIncrementSeconds;
+    draft_.repertoires.clear();
+    draft_.repertoireColors.clear();
+    if (repertoires_ != nullptr) {
+        for (const storage::RepertoireInfo& info : repertoires_->repertoires()) {
+            draft_.repertoires.emplace_back(info.id, info.name);
+            draft_.repertoireColors.push_back(info.color);
+        }
+    }
     draft_.error.clear();
     wantNewGameDialog_ = true;
 }
@@ -935,7 +1270,7 @@ void PlayScreen::drawNewGameDialog() {
     }
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(460.0f, 0.0f), ImVec2(460.0f, viewport->WorkSize.y * 0.92f));
     if (!ImGui::BeginPopupModal("New game", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings)) return;
 
     ImGui::SeparatorText("Opponent");
@@ -953,7 +1288,49 @@ void PlayScreen::drawNewGameDialog() {
     colorRadio("Black", app::ColorChoice::Black);
     ImGui::SameLine();
     colorRadio("Random", app::ColorChoice::Random);
+    ImGui::EndDisabled();
 
+    ImGui::SeparatorText("Time control");
+    {
+        struct Preset {
+            const char* label;
+            int base;
+            int increment;
+        };
+        static constexpr Preset kPresets[] = {
+            {"Untimed", 0, 0},          {"Bullet  1 + 0", 60, 0},    {"Bullet  2 + 1", 120, 1},
+            {"Blitz  3 + 2", 180, 2},   {"Blitz  5 + 0", 300, 0},    {"Blitz  5 + 3", 300, 3},
+            {"Rapid  10 + 0", 600, 0},  {"Rapid  10 + 5", 600, 5},   {"Rapid  15 + 10", 900, 10},
+            {"Classical  30 + 0", 1800, 0}, {"Classical  30 + 20", 1800, 20},
+        };
+        const char* current = "Custom";
+        for (const Preset& preset : kPresets) {
+            if (preset.base == draft_.clockBaseSeconds && preset.increment == draft_.clockIncrementSeconds) current = preset.label;
+        }
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::BeginCombo("##timecontrol", current)) {
+            for (const Preset& preset : kPresets) {
+                if (ImGui::Selectable(preset.label, current == preset.label)) {
+                    draft_.clockBaseSeconds = preset.base;
+                    draft_.clockIncrementSeconds = preset.increment;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (draft_.clockBaseSeconds > 0) {
+            int minutes = std::max(1, draft_.clockBaseSeconds / 60);
+            const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+            ImGui::SetNextItemWidth(half);
+            if (ImGui::SliderInt("##minutes", &minutes, 1, 90, "%d min", ImGuiSliderFlags_AlwaysClamp)) {
+                draft_.clockBaseSeconds = minutes * 60;
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(half);
+            ImGui::SliderInt("##increment", &draft_.clockIncrementSeconds, 0, 60, "+ %d s per move", ImGuiSliderFlags_AlwaysClamp);
+        }
+    }
+
+    ImGui::BeginDisabled(!draft_.againstEngine);
     ImGui::SeparatorText("Strength");
     if (ImGui::RadioButton("Level", draft_.strengthMode == app::StrengthMode::Level)) draft_.strengthMode = app::StrengthMode::Level;
     ImGui::SameLine();
@@ -970,16 +1347,24 @@ void PlayScreen::drawNewGameDialog() {
     ImGui::SeparatorText("Thinking");
     float seconds = static_cast<float>(draft_.thinkTimeMs) / 1000.0f;
     ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::SliderFloat("##time", &seconds, 0.1f, 10.0f, "Up to %.1f s per move", ImGuiSliderFlags_AlwaysClamp)) {
+    ImGui::BeginDisabled(draft_.clockBaseSeconds > 0);
+    if (ImGui::SliderFloat("##time", &seconds, 0.1f, 10.0f,
+                           draft_.clockBaseSeconds > 0 ? "Uses its clock" : "Up to %.1f s per move", ImGuiSliderFlags_AlwaysClamp)) {
         draft_.thinkTimeMs = static_cast<int>(std::lround(seconds * 10.0f)) * 100;
     }
+    ImGui::EndDisabled();
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::SliderInt("##depth", &draft_.depthLimit, 0, 30, draft_.depthLimit == 0 ? "No depth limit" : "Depth limit %d",
                      ImGuiSliderFlags_AlwaysClamp);
     ImGui::EndDisabled();
 
+    if (draft_.againstEngine) drawOpeningChoice();
+
     ImGui::SeparatorText("Start position");
+    if (draft_.againstEngine && draft_.openingMode != 0) draft_.customPosition = false;
+    ImGui::BeginDisabled(draft_.againstEngine && draft_.openingMode != 0);
     ImGui::Checkbox("Custom position (FEN)", &draft_.customPosition);
+    ImGui::EndDisabled();
     if (draft_.customPosition) {
         const float pasteWidth = 70.0f;
         ImGui::SetNextItemWidth(-(pasteWidth + ImGui::GetStyle().ItemSpacing.x));
@@ -1006,8 +1391,19 @@ void PlayScreen::drawNewGameDialog() {
     if (ImGui::Button("Start game", ImVec2(buttonWidth, 0.0f))) {
         const std::string fen = draft_.customPosition ? std::string(draft_.fen.data()) : std::string(core::kStartFen);
         std::string error;
+        const int openingMode = draft_.againstEngine ? draft_.openingMode : 0;
+        const bool hasLines = openingBook_ != nullptr && draft_.openingIndex >= 0 &&
+                              draft_.openingIndex < static_cast<int>(openingBook_->lines().size());
+        std::size_t repertoire = draft_.repertoires.size();
+        for (std::size_t i = 0; i < draft_.repertoires.size(); ++i) {
+            if (draft_.repertoires[i].first == draft_.repertoireId) repertoire = i;
+        }
         if (!core::validateFen(fen, &error)) {
             draft_.error = "Invalid position: " + error + ".";
+        } else if (openingMode == 1 && !hasLines) {
+            draft_.error = "Choose an opening to practise.";
+        } else if (openingMode == 2 && repertoire == draft_.repertoires.size()) {
+            draft_.error = "Choose a repertoire to practise.";
         } else {
             settings_.playAgainstEngine = draft_.againstEngine;
             settings_.playAs = draft_.playAs;
@@ -1016,9 +1412,24 @@ void PlayScreen::drawNewGameDialog() {
             settings_.elo = draft_.elo;
             settings_.thinkTimeMs = draft_.thinkTimeMs;
             settings_.depthLimit = draft_.depthLimit;
+            settings_.clockBaseSeconds = draft_.clockBaseSeconds;
+            settings_.clockIncrementSeconds = draft_.clockIncrementSeconds;
             settings_.sanitize();
             settingsChanged_ = true;
-            startNewGame(draft_.againstEngine, draft_.playAs, fen);
+
+            app::ColorChoice playAs = draft_.playAs;
+            Book book;
+            if (openingMode == 1) {
+                book = bookFromLine(openingBook_->lines()[static_cast<std::size_t>(draft_.openingIndex)]);
+            } else if (openingMode == 2) {
+                book.name = draft_.repertoires[repertoire].second;
+                book.tree = repertoires_->loadTree(draft_.repertoireId);
+                book.fromRepertoire = true;
+                // The user plays the repertoire's side.
+                playAs = draft_.repertoireColors[repertoire] == Color::White ? app::ColorChoice::White : app::ColorChoice::Black;
+            }
+            startNewGame(draft_.againstEngine, playAs, fen);
+            if (openingMode != 0) book_ = std::move(book);
             ImGui::CloseCurrentPopup();
         }
     }
@@ -1026,6 +1437,72 @@ void PlayScreen::drawNewGameDialog() {
     if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
 
     ImGui::EndPopup();
+}
+
+void PlayScreen::drawOpeningChoice() {
+    ImGui::SeparatorText("Opening");
+    if (ImGui::RadioButton("Any", draft_.openingMode == 0)) draft_.openingMode = 0;
+    ImGui::SameLine();
+    ImGui::BeginDisabled(openingBook_ == nullptr || openingBook_->lines().empty());
+    if (ImGui::RadioButton("Practise an opening", draft_.openingMode == 1)) draft_.openingMode = 1;
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(draft_.repertoires.empty());
+    if (ImGui::RadioButton("My repertoire", draft_.openingMode == 2)) draft_.openingMode = 2;
+    ImGui::EndDisabled();
+    if (draft_.repertoires.empty()) ImGui::SetItemTooltip("Build a repertoire in Openings first");
+
+    if (draft_.openingMode == 1 && openingBook_ != nullptr) {
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputTextWithHint("##openingfilter", "Search, e.g. Italian, Najdorf or C50", draft_.openingFilter.data(),
+                                 draft_.openingFilter.size());
+        std::string filter(draft_.openingFilter.data());
+        std::transform(filter.begin(), filter.end(), filter.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        const std::vector<core::OpeningLine>& lines = openingBook_->lines();
+        if (ImGui::BeginListBox("##openings", ImVec2(-1.0f, ImGui::GetTextLineHeightWithSpacing() * 6.5f))) {
+            int shown = 0;
+            for (std::size_t i = 0; i < lines.size() && shown < 300; ++i) {
+                std::string label = lines[i].eco + "  " + lines[i].name;
+                if (!filter.empty()) {
+                    std::string lower = label;
+                    std::transform(lower.begin(), lower.end(), lower.begin(),
+                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    if (lower.find(filter) == std::string::npos) continue;
+                }
+                ++shown;
+                label += "##" + std::to_string(i);
+                if (ImGui::Selectable(label.c_str(), draft_.openingIndex == static_cast<int>(i))) {
+                    draft_.openingIndex = static_cast<int>(i);
+                    draft_.error.clear();
+                }
+            }
+            ImGui::EndListBox();
+        }
+        if (draft_.openingIndex >= 0 && draft_.openingIndex < static_cast<int>(lines.size())) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextDisabled("%s", lines[static_cast<std::size_t>(draft_.openingIndex)].pgn.c_str());
+            ImGui::PopTextWrapPos();
+        }
+    } else if (draft_.openingMode == 2) {
+        const char* preview = "Choose a repertoire";
+        for (const auto& [id, name] : draft_.repertoires) {
+            if (id == draft_.repertoireId) preview = name.c_str();
+        }
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::BeginCombo("##repertoire", preview)) {
+            for (std::size_t i = 0; i < draft_.repertoires.size(); ++i) {
+                const std::string label = draft_.repertoires[i].second + "  (" +
+                                          (draft_.repertoireColors[i] == Color::White ? "White" : "Black") + ")##" +
+                                          std::to_string(draft_.repertoires[i].first);
+                if (ImGui::Selectable(label.c_str(), draft_.repertoires[i].first == draft_.repertoireId)) {
+                    draft_.repertoireId = draft_.repertoires[i].first;
+                    draft_.error.clear();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::TextDisabled("You play the repertoire's side; the computer answers from it until it runs out.");
+    }
 }
 
 void PlayScreen::drawResignDialog() {

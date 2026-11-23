@@ -346,3 +346,29 @@ TEST_CASE("FEN handling") {
         CHECK(game.ply() == 1);
     }
 }
+
+TEST_CASE("running out of time") {
+    SUBCASE("the other side wins") {
+        Game game;
+        play(game, {"e2e4", "e7e5"});
+        game.flag(Color::White);
+        CHECK(game.status() == Status::Timeout);
+        CHECK(game.result() == Result::BlackWins);
+        CHECK(game.legalMoves().empty());
+        REQUIRE(game.undo());
+        CHECK(game.status() == Status::Ongoing);
+    }
+    SUBCASE("a draw when the other side cannot mate") {
+        Game game;
+        REQUIRE(game.reset("8/8/8/4k3/8/8/4K1N1/7Q w - - 0 1"));
+        game.flag(Color::White);  // Black has a lone king
+        CHECK(game.status() == Status::Timeout);
+        CHECK(game.result() == Result::Draw);
+    }
+    SUBCASE("a win with a single pawn left") {
+        Game game;
+        REQUIRE(game.reset("8/8/8/4k3/8/3p4/4K3/7Q w - - 0 1"));
+        game.flag(Color::White);
+        CHECK(game.result() == Result::BlackWins);
+    }
+}
