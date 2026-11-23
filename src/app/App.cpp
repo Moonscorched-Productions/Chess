@@ -301,6 +301,7 @@ App::App(const Options& options)
 
 App::~App() {
     saveSettings();
+    trackUsage(true);
     // Screens hold engine processes and textures; release them before the window goes away.
     settingsScreen_.reset();
     statistics_.reset();
@@ -547,7 +548,20 @@ int App::run() {
     return exitCode;
 }
 
+void App::trackUsage(bool flush) {
+    const auto now = std::chrono::steady_clock::now();
+    // A long gap means the machine slept; that does not count.
+    usagePending_ += std::min(std::chrono::duration<double>(now - usageTick_).count(), 60.0);
+    usageTick_ = now;
+    if (!store_ || options_.temporarySettings || (!flush && usagePending_ < 30.0)) return;
+    const auto whole = static_cast<std::int64_t>(usagePending_);
+    store_->addUsage(whole);
+    usagePending_ -= static_cast<double>(whole);
+    if (statistics_) statistics_->markDirty();
+}
+
 void App::frame() {
+    trackUsage(false);
     const sf::Vector2u size = window_.getSize();
     if (size.x == 0 || size.y == 0) return;  // minimized
 

@@ -62,7 +62,7 @@ void StatisticsScreen::reload() {
     games_.clear();
     if (reviews_ != nullptr) games_ = reviews_->playerGames(settings_.playerNames);
     stats_ = core::summarize(games_);
-    playTime_ = gameStore_ != nullptr ? gameStore_->playTime() : storage::PlayTime{};
+    usage_ = gameStore_ != nullptr ? gameStore_->usage() : storage::Usage{};
 }
 
 namespace {
@@ -96,9 +96,9 @@ void StatisticsScreen::draw() {
     ImGui::BeginChild("##statistics", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
     if (stats_.games == 0) {
         ImGui::PushTextWrapPos(std::min(ImGui::GetContentRegionAvail().x, 720.0f));
-        if (playTime_.games > 0) {
-            ImGui::Text("Time played: %s over %d %s", formatPlayTime(playTime_.seconds).c_str(), playTime_.games,
-                        playTime_.games == 1 ? "game" : "games");
+        if (usage_.totalSeconds > 0) {
+            ImGui::Text("Time in the app: %s  \xC2\xB7  today %s", formatPlayTime(usage_.totalSeconds).c_str(),
+                        formatPlayTime(usage_.todaySeconds).c_str());
             ImGui::Spacing();
         }
         ImGui::TextUnformatted("No reviewed games of yours yet.");
@@ -176,14 +176,10 @@ void StatisticsScreen::drawTiles() {
     colorTile("##tile-black", "Accuracy as Black", stats_.black);
 
     ImGui::SameLine();
-    if (playTime_.games == 0) {
-        tile("##tile-time", width, "Time played", "-", "no timed games yet");
-    } else {
-        const std::string total = formatPlayTime(playTime_.seconds);
-        std::snprintf(detail, sizeof(detail), "%d %s  \xC2\xB7  %s per game", playTime_.games,
-                      playTime_.games == 1 ? "game" : "games", formatPlayTime(playTime_.seconds / playTime_.games).c_str());
-        tile("##tile-time", width, "Time played", total.c_str(), detail);
-    }
+    const std::string total = formatPlayTime(usage_.totalSeconds);
+    std::snprintf(detail, sizeof(detail), "today %s  \xC2\xB7  %d %s", formatPlayTime(usage_.todaySeconds).c_str(),
+                  usage_.days, usage_.days == 1 ? "day" : "days");
+    tile("##tile-time", width, "Time in the app", total.c_str(), detail);
 }
 
 // One point per game on a scale that always includes 100, with the average as a line.

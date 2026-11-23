@@ -8,6 +8,7 @@
 
 #include <SFML/Graphics/RenderWindow.hpp>
 #include <SFML/System/Clock.hpp>
+#include <chrono>
 #include <SFML/Window/Cursor.hpp>
 #include <imgui.h>
 
@@ -103,6 +104,8 @@ private:
     void renderImGui();
     void drawSidebar(float width, float height);
     void drawContent(float x, float width, float height);
+    // Counts the time the app is open; `flush` writes it out right away.
+    void trackUsage(bool flush);
     void saveSettings();
     void routeRequests();
     void updatePresence();
@@ -122,6 +125,9 @@ private:
     platform::LiveResize liveResize_;
     RichPresence presence_;
     sf::Clock frameClock_;
+    // Time the app has been open, written to the database every so often.
+    std::chrono::steady_clock::time_point usageTick_ = std::chrono::steady_clock::now();
+    double usagePending_ = 0.0;
     bool screenshotRequested_ = false;
     bool screenshotSaved_ = false;
     Assets assets_;

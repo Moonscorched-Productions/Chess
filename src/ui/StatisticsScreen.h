@@ -41,7 +41,7 @@ private:
     app::Settings& settings_;
     storage::ReviewStore* reviews_;
     storage::GameStore* gameStore_;
-    storage::PlayTime playTime_;
+    storage::Usage usage_;
     std::vector<core::PlayerGame> games_;
     core::PlayerStats stats_;
     bool dirty_ = true;

@@ -33,10 +33,11 @@ struct GameFilter {
     int limit = 500;
 };
 
-// Time spent on the games played in the Play section.
-struct PlayTime {
-    int games = 0;              // games with a recorded time
-    std::int64_t seconds = 0;
+// How long the app has been open.
+struct Usage {
+    std::int64_t totalSeconds = 0;
+    std::int64_t todaySeconds = 0;
+    int days = 0;  // days on which it was used
 };
 
 struct ImportResult {
@@ -62,10 +63,9 @@ public:
     // Replaces the stored game `id`.
     bool update(GameId id, const core::GameRecord& record);
     bool remove(GameId id);
-    // Records how long the game `id` took to play.
-    bool setPlaySeconds(GameId id, std::int64_t seconds);
-    // Total time over all games with a recorded play time.
-    PlayTime playTime() const;
+    // Adds time the app was open to today's total.
+    void addUsage(std::int64_t seconds);
+    Usage usage() const;
 
     // Newest games first.
     std::vector<GameSummary> list(const GameFilter& filter = {}) const;

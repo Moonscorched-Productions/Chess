@@ -409,7 +409,6 @@ void PlayScreen::saveFinishedGame() {
     } else {
         savedGameId_ = store_->add(record, "play");
     }
-    if (savedGameId_) store_->setPlaySeconds(*savedGameId_, std::max<std::int64_t>(1, std::llround(playSeconds_)));
     savedResult_ = game_.result();
     savedPly_ = game_.ply();
     libraryChanged_ = true;

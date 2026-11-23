@@ -25,8 +25,12 @@ CREATE TABLE IF NOT EXISTS games (
     moves      INTEGER NOT NULL DEFAULT 0,
     source     TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    pgn        TEXT NOT NULL,
-    seconds    INTEGER NOT NULL DEFAULT 0  -- time spent playing it in Play, 0 = unknown
+    pgn        TEXT NOT NULL
+);
+-- Time the app was open, per local day.
+CREATE TABLE IF NOT EXISTS usage (
+    day     TEXT PRIMARY KEY,
+    seconds INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS games_white ON games(white);
 CREATE INDEX IF NOT EXISTS games_black ON games(black);
@@ -74,30 +78,30 @@ std::unique_ptr<GameStore> GameStore::open(const std::filesystem::path& file, st
         if (error != nullptr) *error = "Could not prepare the game database: " + store->impl_->message();
         return nullptr;
     }
-    // Added after the first release: databases created before then lack the column.
-    // (Fails harmlessly when the column is already there.)
-    store->impl_->exec("ALTER TABLE games ADD COLUMN seconds INTEGER NOT NULL DEFAULT 0;");
     return store;
 }
 
-bool GameStore::setPlaySeconds(GameId id, std::int64_t seconds) {
-    Statement statement(*impl_->connection, "UPDATE games SET seconds=?1 WHERE id=?2");
-    if (!statement.valid()) return false;
+void GameStore::addUsage(std::int64_t seconds) {
+    if (seconds <= 0) return;
+    Statement statement(*impl_->connection,
+                        "INSERT INTO usage (day, seconds) VALUES (date('now', 'localtime'), ?1) "
+                        "ON CONFLICT(day) DO UPDATE SET seconds = seconds + excluded.seconds");
+    if (!statement.valid()) return;
     statement.bind(1, seconds);
-    statement.bind(2, id);
     statement.step();
-    return statement.done() && impl_->connection->changes() > 0;
 }
 
-PlayTime GameStore::playTime() const {
-    PlayTime total;
-    Statement statement(*impl_->connection, "SELECT COUNT(*), COALESCE(SUM(seconds), 0) FROM games WHERE seconds > 0");
-    if (!statement.valid() || !statement.step()) return total;
-    total.games = static_cast<int>(statement.integer(0));
-    total.seconds = statement.integer(1);
-    return total;
+Usage GameStore::usage() const {
+    Usage result;
+    Statement statement(*impl_->connection,
+                        "SELECT COUNT(*), COALESCE(SUM(seconds), 0), "
+                        "COALESCE(SUM(CASE WHEN day = date('now', 'localtime') THEN seconds END), 0) FROM usage");
+    if (!statement.valid() || !statement.step()) return result;
+    result.days = static_cast<int>(statement.integer(0));
+    result.totalSeconds = statement.integer(1);
+    result.todaySeconds = statement.integer(2);
+    return result;
 }
-
 
 std::optional<GameId> GameStore::add(const core::GameRecord& record, std::string_view source) {
     Statement statement(*impl_->connection,
