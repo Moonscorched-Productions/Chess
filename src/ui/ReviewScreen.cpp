@@ -384,9 +384,13 @@ void ReviewScreen::drawList() {
         return;
     }
 
-    const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerV |
-                                  ImGuiTableFlags_SizingStretchProp;
-    if (!ImGui::BeginTable("##review-games", 6, flags, ImVec2(0.0f, ImGui::GetContentRegionAvail().y))) return;
+    const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp;
+    ImGui::BeginChild("##review-card", ImVec2(0.0f, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_NoScrollbar);
+    if (!ImGui::BeginTable("##review-games", 6, flags, ImVec2(0.0f, ImGui::GetContentRegionAvail().y))) {
+        ImGui::EndChild();
+        return;
+    }
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed, 96.0f);
     ImGui::TableSetupColumn("White", ImGuiTableColumnFlags_WidthStretch, 3.0f);
@@ -394,7 +398,7 @@ void ReviewScreen::drawList() {
     ImGui::TableSetupColumn("Result", ImGuiTableColumnFlags_WidthFixed, 70.0f);
     ImGui::TableSetupColumn("Moves", ImGuiTableColumnFlags_WidthFixed, 60.0f);
     ImGui::TableSetupColumn("Accuracy", ImGuiTableColumnFlags_WidthFixed, 130.0f);
-    ImGui::TableHeadersRow();
+    tableHeaders();
 
     storage::GameId toOpen = 0;
     ImGuiListClipper clipper;
@@ -405,11 +409,9 @@ void ReviewScreen::drawList() {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(static_cast<int>(game.id));
-            if (ImGui::Selectable(game.date.empty() ? "-" : game.date.c_str(), selected_ == game.id,
-                                  ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
-                selected_ = game.id;
-                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) toOpen = game.id;
-            }
+            const RowClick click = tableRow(game.date.empty() ? "-" : game.date.c_str(), selected_ == game.id);
+            if (click.clicked) selected_ = game.id;
+            if (click.doubleClicked) toOpen = game.id;
             ImGui::PopID();
             ImGui::TableSetColumnIndex(1);
             ImGui::TextUnformatted(game.white.empty() ? "?" : game.white.c_str());
@@ -428,6 +430,7 @@ void ReviewScreen::drawList() {
         }
     }
     ImGui::EndTable();
+    ImGui::EndChild();
     if (toOpen != 0) reviewFromLibrary(toOpen);
 }
 
@@ -447,15 +450,13 @@ void ReviewScreen::drawGame() {
 
     const ImGuiStyle& style = ImGui::GetStyle();
     const ImVec2 avail = ImGui::GetContentRegionAvail();
-    const float panelWidth = std::clamp(avail.x * 0.36f, 300.0f, 520.0f);
-    float boardSize = std::min(avail.x - panelWidth - kEvalBarWidth - 2.0f * style.ItemSpacing.x,
-                               avail.y - kGraphHeight - style.ItemSpacing.y);
-    boardSize = std::floor(std::max(boardSize, 240.0f) / 8.0f) * 8.0f;
+    const BoardLayout layout = boardLayout(0.36f, 300.0f, 520.0f, kEvalBarWidth + style.ItemSpacing.x,
+                                           kGraphHeight + style.ItemSpacing.y);
+    const float panelWidth = layout.panelWidth;
+    const float boardSize = layout.boardSize;
     const float leftWidth = kEvalBarWidth + style.ItemSpacing.x + boardSize;
     const float columnHeight = boardSize + style.ItemSpacing.y + kGraphHeight;
-
-    const float used = leftWidth + style.ItemSpacing.x + panelWidth;
-    if (avail.x > used) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::floor((avail.x - used) * 0.5f));
+    ImGui::SetCursorPosX(layout.boardX);
 
     BoardOptions options = boardOptionsFrom(settings_);
     options.flipped = flipped_;
@@ -480,7 +481,7 @@ void ReviewScreen::drawGame() {
                                          [this](NodeId id) { return qualityOf(id); }, "Waiting for the engine...");
     ImGui::EndGroup();
 
-    ImGui::SameLine();
+    ImGui::SameLine(layout.panelX);
     ImGui::BeginChild("##review-panel", ImVec2(panelWidth, std::max(columnHeight, avail.y)),
                       ImGuiChildFlags_AlwaysUseWindowPadding);
 

@@ -92,8 +92,8 @@ struct Palette {
 };
 
 // In the order of uiThemes().
-const std::array<Palette, 6>& palettes() {
-    static const std::array<Palette, 6> list = {{
+const std::array<Palette, 14>& palettes() {
+    static const std::array<Palette, 14> list = {{
         // Forest: the original green on warm charcoal.
         {hex(0x161512), hex(0x262421), hex(0x373531), hex(0x494641), hex(0x629940), hex(0x99CC66), hex(0xCCCCC7),
          hex(0x80807A), hex(0x6FA34A), hex(0xC8B27A)},
@@ -112,6 +112,30 @@ const std::array<Palette, 6>& palettes() {
         // Sand: copper on warm paper.
         {hex(0xEFE8DC), hex(0xFCF8F1), hex(0xE3D9C8), hex(0xD6CAB6), hex(0xB8722E), hex(0x8E5418), hex(0x2B241C),
          hex(0x7D7263), hex(0xE0A060), hex(0xC9A0D0)},
+        // Crimson: red on dark wine.
+        {hex(0x170E0F), hex(0x261819), hex(0x372223), hex(0x482D2F), hex(0xC8414B), hex(0xF08A90), hex(0xE8DCDC),
+         hex(0x927F80), hex(0xC83C46), hex(0xD08A3C)},
+        // Ember: orange on charred brown.
+        {hex(0x17110C), hex(0x271C14), hex(0x38281C), hex(0x493425), hex(0xE0702A), hex(0xF5A468), hex(0xEADFD4),
+         hex(0x958372), hex(0xE06A28), hex(0xC83C46)},
+        // Sunflower: yellow on dark olive.
+        {hex(0x15130B), hex(0x252114), hex(0x352F1D), hex(0x463E27), hex(0xD9AE2B), hex(0xF2D36B), hex(0xE9E4D2),
+         hex(0x928B72), hex(0xE0B42E), hex(0x8FB04A)},
+        // Ocean: teal on deep sea.
+        {hex(0x0B1416), hex(0x142225), hex(0x1D3135), hex(0x274045), hex(0x2AA8A8), hex(0x6FD6D2), hex(0xD6E5E5),
+         hex(0x7B9192), hex(0x22A6A6), hex(0x3F7FD8)},
+        // Amethyst: purple on dark violet.
+        {hex(0x120E1A), hex(0x1E1829), hex(0x2B2239), hex(0x392D4A), hex(0x8E5CD9), hex(0xBF9BF2), hex(0xE1DBEA),
+         hex(0x8A8197), hex(0x8A55D8), hex(0xC45A9E)},
+        // Lavender: purple on pale lilac.
+        {hex(0xEEEAF4), hex(0xFBF9FE), hex(0xE1DAEC), hex(0xD3CAE2), hex(0x8459C8), hex(0x5E37A0), hex(0x2A2433),
+         hex(0x7A7187), hex(0xB89AE8), hex(0xE8A8C8)},
+        // Sky: blue on pale sky.
+        {hex(0xE8EEF4), hex(0xF8FBFE), hex(0xD9E3EE), hex(0xCAD7E5), hex(0x3D7FD0), hex(0x23599E), hex(0x1F2833),
+         hex(0x6D7A88), hex(0x8EB8EE), hex(0x8ED8D0)},
+        // Blossom: pink on pale rose.
+        {hex(0xF5EBEE), hex(0xFEF9FA), hex(0xEDDCE1), hex(0xE2CBD2), hex(0xC94F78), hex(0x9C2E55), hex(0x30232A),
+         hex(0x86717A), hex(0xEEA0B8), hex(0xF0C080)},
     }};
     return list;
 }
@@ -256,6 +280,7 @@ void applyTheme(int theme) {
     style.ScrollbarSize = 11.0f;
     style.SeparatorTextBorderSize = 1.0f;
     style.SeparatorTextPadding = ImVec2(14.0f, 4.0f);
+    style.CellPadding = ImVec2(10.0f, 7.0f);
 
     const Palette& p = palette(theme);
     // Panels let a little of the background light through.
@@ -292,9 +317,9 @@ void applyTheme(int theme) {
     c[ImGuiCol_ScrollbarGrabActive] = p.hover;
     c[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, light ? 0.30f : 0.55f);
     c[ImGuiCol_TableRowBg] = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_TableRowBgAlt] = light ? ImVec4(0.0f, 0.0f, 0.0f, 0.03f) : ImVec4(1.0f, 1.0f, 1.0f, 0.03f);
-    c[ImGuiCol_TableHeaderBg] = withAlpha(p.raised, 0.85f);
-    c[ImGuiCol_TableBorderLight] = subtle;
+    c[ImGuiCol_TableRowBgAlt] = light ? ImVec4(0.0f, 0.0f, 0.0f, 0.022f) : ImVec4(1.0f, 1.0f, 1.0f, 0.022f);
+    c[ImGuiCol_TableHeaderBg] = ImVec4(0, 0, 0, 0);  // headers are quiet text over a rule, see ui::tableHeaders()
+    c[ImGuiCol_TableBorderLight] = withAlpha(subtle, subtle.w * 0.7f);
     c[ImGuiCol_TableBorderStrong] = subtle;
     c[ImGuiCol_Tab] = withAlpha(p.raised, 0.85f);
     c[ImGuiCol_TabHovered] = mix(p.hover, p.accent, 0.25f);
@@ -325,37 +350,38 @@ void drawBackground(int theme, double time, bool animate) {
 
     // Large, drifting pools of light.
     const float extent = std::max(size.x, size.y);
-    const float glowAlpha = light ? 0.20f : 0.13f;
+    const float glowAlpha = light ? 0.30f : 0.22f;
     struct Pool {
         float x, y, speedX, speedY, radius, phase;
         bool second;
     };
     static constexpr Pool kPools[] = {
-        {0.22f, 0.25f, 0.021f, 0.017f, 0.55f, 0.0f, false},
-        {0.80f, 0.70f, 0.016f, 0.023f, 0.60f, 2.1f, true},
-        {0.55f, 0.05f, 0.012f, 0.019f, 0.45f, 4.0f, false},
+        {0.22f, 0.25f, 0.045f, 0.036f, 0.55f, 0.0f, false},
+        {0.80f, 0.70f, 0.034f, 0.048f, 0.60f, 2.1f, true},
+        {0.55f, 0.05f, 0.026f, 0.040f, 0.45f, 4.0f, false},
     };
     for (const Pool& pool : kPools) {
-        const ImVec2 center(size.x * (pool.x + 0.14f * std::sin(t * pool.speedX + pool.phase)),
-                            size.y * (pool.y + 0.16f * std::cos(t * pool.speedY + pool.phase * 1.7f)));
-        const float breathe = 1.0f + 0.06f * std::sin(t * 0.05f + pool.phase);
+        const ImVec2 center(size.x * (pool.x + 0.20f * std::sin(t * pool.speedX + pool.phase)),
+                            size.y * (pool.y + 0.22f * std::cos(t * pool.speedY + pool.phase * 1.7f)));
+        const float breathe = 1.0f + 0.12f * std::sin(t * 0.11f + pool.phase);
         glow(drawList, center, extent * pool.radius * breathe, u32(pool.second ? p.glowB : p.glowA, glowAlpha));
     }
 
     // Two soft ribbons of light flowing across the lower half.
-    const float ribbonAlpha = light ? 0.16f : 0.09f;
-    ribbon(drawList, size, size.y * 0.66f, size.y * 0.07f, size.y * 0.10f, t * 0.11f, u32(p.glowA, ribbonAlpha));
-    ribbon(drawList, size, size.y * 0.74f, size.y * 0.05f, size.y * 0.07f, t * 0.08f + 2.5f, u32(p.glowB, ribbonAlpha * 0.8f));
+    const float ribbonAlpha = light ? 0.24f : 0.17f;
+    ribbon(drawList, size, size.y * 0.64f, size.y * 0.09f, size.y * 0.12f, t * 0.24f, u32(p.glowA, ribbonAlpha));
+    ribbon(drawList, size, size.y * 0.74f, size.y * 0.07f, size.y * 0.08f, t * 0.17f + 2.5f, u32(p.glowB, ribbonAlpha * 0.85f));
+    ribbon(drawList, size, size.y * 0.30f, size.y * 0.06f, size.y * 0.06f, -t * 0.13f + 1.0f, u32(p.glowA, ribbonAlpha * 0.5f));
 
     // A few motes rising very slowly.
     const ImVec4 moteColor = light ? p.accent : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-    for (int i = 0; i < 36; ++i) {
-        const float speed = 4.0f + 10.0f * hash(i, 1);
+    for (int i = 0; i < 56; ++i) {
+        const float speed = 8.0f + 18.0f * hash(i, 1);
         const float span = size.y + 40.0f;
         const float y = size.y + 20.0f - std::fmod(hash(i, 2) * span + t * speed, span);
         const float x = hash(i, 3) * size.x + 14.0f * std::sin(t * (0.10f + 0.12f * hash(i, 4)) + static_cast<float>(i));
         const float twinkle = 0.5f + 0.5f * std::sin(t * (0.4f + hash(i, 5)) + static_cast<float>(i) * 1.3f);
-        const float alpha = (light ? 0.10f : 0.07f) * (0.35f + 0.65f * twinkle);
+        const float alpha = (light ? 0.16f : 0.13f) * (0.35f + 0.65f * twinkle);
         drawList->AddCircleFilled(ImVec2(x, y), 1.0f + 1.6f * hash(i, 6), u32(moteColor, alpha), 12);
     }
 }

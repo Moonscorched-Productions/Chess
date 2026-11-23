@@ -366,13 +366,11 @@ void OpeningsScreen::draw() {
         saveTree();
     }
 
-    const ImGuiStyle& style = ImGui::GetStyle();
     const ImVec2 avail = ImGui::GetContentRegionAvail();
-    const float panelWidth = std::clamp(avail.x * 0.36f, 320.0f, 480.0f);
-    float boardSize = std::min(avail.x - panelWidth - style.ItemSpacing.x, avail.y);
-    boardSize = std::floor(std::max(boardSize, 240.0f) / 8.0f) * 8.0f;
-    const float used = boardSize + style.ItemSpacing.x + panelWidth;
-    if (avail.x > used) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::floor((avail.x - used) * 0.5f));
+    const BoardLayout layout = boardLayout(0.36f, 320.0f, 480.0f);
+    const float panelWidth = layout.panelWidth;
+    const float boardSize = layout.boardSize;
+    ImGui::SetCursorPosX(layout.boardX);
 
     const storage::RepertoireInfo* info = selectedInfo();
     const bool asking = training_ && info != nullptr && lineIndex_ < line_.size() &&
@@ -387,7 +385,7 @@ void OpeningsScreen::draw() {
     }
 
     const std::optional<core::Move> move = board_.draw(position_, assets_, options, boardSize);
-    ImGui::SameLine();
+    ImGui::SameLine(layout.panelX);
     drawSidePanel(panelWidth, std::max(boardSize, avail.y));
     drawRepertoireDialog();
 

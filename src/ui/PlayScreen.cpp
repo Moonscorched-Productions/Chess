@@ -852,15 +852,11 @@ void PlayScreen::draw() {
     handleShortcuts();
 
     const ImGuiStyle& style = ImGui::GetStyle();
-    const ImVec2 avail = ImGui::GetContentRegionAvail();
-    const float panelWidth = std::clamp(avail.x * 0.3f, 280.0f, 380.0f);
     const float barBlock = kBarHeight + style.ItemSpacing.y;
-    float boardSize = std::min(avail.x - panelWidth - style.ItemSpacing.x, avail.y - 2.0f * barBlock);
-    boardSize = std::floor(std::max(boardSize, 240.0f) / 8.0f) * 8.0f;
-
-    // Centre the board and panel when the window is wider than they need.
-    const float used = boardSize + style.ItemSpacing.x + panelWidth;
-    if (avail.x > used) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::floor((avail.x - used) * 0.5f));
+    const BoardLayout layout = boardLayout(0.3f, 280.0f, 380.0f, 0.0f, 2.0f * barBlock);
+    const float panelWidth = layout.panelWidth;
+    const float boardSize = layout.boardSize;
+    ImGui::SetCursorPosX(layout.boardX);
 
     const Color topColor = flipped_ ? Color::White : Color::Black;
 
@@ -892,7 +888,7 @@ void PlayScreen::draw() {
     drawPlayerBar(core::opposite(topColor), boardSize);
     ImGui::EndGroup();
 
-    ImGui::SameLine();
+    ImGui::SameLine(layout.panelX);
     drawSidePanel(panelWidth, boardSize + 2.0f * barBlock);
 
     drawNewGameDialog();

@@ -25,7 +25,7 @@ struct UiTheme {
     std::array<float, 3> boardLight;
     std::array<float, 3> boardDark;
 };
-const std::array<UiTheme, 6>& uiThemes();
+const std::array<UiTheme, 14>& uiThemes();
 
 // Engine strength behind each difficulty level (1..8).
 struct LevelPreset {

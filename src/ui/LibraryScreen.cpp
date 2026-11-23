@@ -179,9 +179,11 @@ void LibraryScreen::draw() {
 
     // --- Table -----------------------------------------------------------------
     const float footer = static_cast<int>(games_.size()) >= kListLimit ? ImGui::GetTextLineHeightWithSpacing() : 0.0f;
-    const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable |
-                                  ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchProp;
-    if (ImGui::BeginTable("##games", 7, flags, ImVec2(0.0f, ImGui::GetContentRegionAvail().y - footer))) {
+    const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp;
+    // The list sits on a panel like the rest of the app.
+    ImGui::BeginChild("##games-card", ImVec2(0.0f, ImGui::GetContentRegionAvail().y - footer), ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_NoScrollbar);
+    if (ImGui::BeginTable("##games", 7, flags, ImVec2(0.0f, ImGui::GetContentRegionAvail().y))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed, 96.0f);
         ImGui::TableSetupColumn("White", ImGuiTableColumnFlags_WidthStretch, 3.0f);
@@ -190,7 +192,7 @@ void LibraryScreen::draw() {
         ImGui::TableSetupColumn("Moves", ImGuiTableColumnFlags_WidthFixed, 60.0f);
         ImGui::TableSetupColumn("Event", ImGuiTableColumnFlags_WidthStretch, 3.0f);
         ImGui::TableSetupColumn("Source", ImGuiTableColumnFlags_WidthFixed, 84.0f);
-        ImGui::TableHeadersRow();
+        tableHeaders();
 
         storage::GameId toOpen = 0;
         ImGuiListClipper clipper;
@@ -202,11 +204,9 @@ void LibraryScreen::draw() {
                 ImGui::TableSetColumnIndex(0);
                 ImGui::PushID(static_cast<int>(game.id));
                 const char* date = game.date.empty() ? "-" : game.date.c_str();
-                if (ImGui::Selectable(date, selected_ == game.id,
-                                      ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
-                    selected_ = game.id;
-                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) toOpen = game.id;
-                }
+                const RowClick click = tableRow(date, selected_ == game.id);
+                if (click.clicked) selected_ = game.id;
+                if (click.doubleClicked) toOpen = game.id;
                 ImGui::PopID();
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextUnformatted(game.white.empty() ? "?" : game.white.c_str());
@@ -225,6 +225,7 @@ void LibraryScreen::draw() {
         ImGui::EndTable();
         if (toOpen != 0) openGame(toOpen);
     }
+    ImGui::EndChild();
     if (footer > 0.0f) ImGui::TextDisabled("Showing the newest %d games. Search to narrow the list.", kListLimit);
 
     // --- Delete confirmation ---------------------------------------------------

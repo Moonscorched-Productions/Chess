@@ -423,7 +423,7 @@ void StatisticsScreen::drawOpenings() {
         ImGui::TableSetupColumn("Games", ImGuiTableColumnFlags_WidthFixed, 70.0f);
         ImGui::TableSetupColumn("Points", ImGuiTableColumnFlags_WidthFixed, 80.0f);
         ImGui::TableSetupColumn("Accuracy", ImGuiTableColumnFlags_WidthFixed, 90.0f);
-        ImGui::TableHeadersRow();
+        tableHeaders();
         for (std::size_t i = 0; i < rows; ++i) {
             const core::OpeningStats& opening = stats_.openings[i];
             ImGui::TableNextRow();

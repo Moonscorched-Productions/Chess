@@ -317,12 +317,11 @@ void PuzzleScreen::draw() {
 
     const ImGuiStyle& style = ImGui::GetStyle();
     const ImVec2 avail = ImGui::GetContentRegionAvail();
-    const float panelWidth = std::clamp(avail.x * 0.32f, 300.0f, 400.0f);
     const float barBlock = kBarHeight + style.ItemSpacing.y;
-    float boardSize = std::min(avail.x - panelWidth - style.ItemSpacing.x, avail.y - barBlock);
-    boardSize = std::floor(std::max(boardSize, 240.0f) / 8.0f) * 8.0f;
-    const float used = boardSize + style.ItemSpacing.x + panelWidth;
-    if (avail.x > used) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::floor((avail.x - used) * 0.5f));
+    const BoardLayout layout = boardLayout(0.32f, 300.0f, 400.0f, 0.0f, barBlock);
+    const float panelWidth = layout.panelWidth;
+    const float boardSize = layout.boardSize;
+    ImGui::SetCursorPosX(layout.boardX);
 
     const bool solving = phase_ == Phase::Solving;
     const core::Color solver = session_.solverColor();
@@ -364,7 +363,7 @@ void PuzzleScreen::draw() {
     const std::optional<core::Move> move = board_.draw(session_.game(), assets_, options, boardSize);
     ImGui::EndGroup();
 
-    ImGui::SameLine();
+    ImGui::SameLine(layout.panelX);
     drawSidePanel(panelWidth, std::max(boardSize + barBlock, avail.y));
 
     if (move) onMove(*move);
@@ -535,7 +534,7 @@ void PuzzleScreen::drawHistory(float height) {
     ImGui::TableSetupColumn("Puzzle");
     ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 48.0f);
     ImGui::TableSetupColumn("You", ImGuiTableColumnFlags_WidthFixed, 52.0f);
-    ImGui::TableHeadersRow();
+    tableHeaders();
 
     std::string toLoad;
     for (std::size_t i = 0; i < history_.size(); ++i) {
@@ -544,7 +543,7 @@ void PuzzleScreen::drawHistory(float height) {
         ImGui::TableSetColumnIndex(0);
         ImGui::PushID(static_cast<int>(i));
         ImGui::PushStyleColor(ImGuiCol_Text, attempt.solved ? kAccentColor : kErrorColor);
-        if (ImGui::Selectable(attempt.solved ? "Solved" : "Missed", false, ImGuiSelectableFlags_SpanAllColumns)) toLoad = attempt.puzzleId;
+        if (tableRow(attempt.solved ? "Solved" : "Missed", false).clicked) toLoad = attempt.puzzleId;
         ImGui::PopStyleColor();
         ImGui::SetItemTooltip("%s\nClick to try this puzzle again", attempt.when.c_str());
         ImGui::PopID();

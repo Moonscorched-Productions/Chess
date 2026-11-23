@@ -58,18 +58,27 @@ std::string writeColor(const std::array<float, 3>& color) {
 
 }  // namespace
 
-const std::array<UiTheme, 6>& uiThemes() {
+const std::array<UiTheme, 14>& uiThemes() {
     const auto rgb = [](int r, int g, int b) {
         return std::array<float, 3>{static_cast<float>(r) / 255.0f, static_cast<float>(g) / 255.0f,
                                     static_cast<float>(b) / 255.0f};
     };
-    static const std::array<UiTheme, 6> themes = {{
+    // New themes go at the end: settings files store the index.
+    static const std::array<UiTheme, 14> themes = {{
         {"Forest", false, rgb(238, 238, 210), rgb(118, 150, 86)},
         {"Walnut", false, rgb(240, 217, 181), rgb(181, 136, 99)},
         {"Midnight", false, rgb(222, 227, 230), rgb(140, 162, 173)},
         {"Rosewood", false, rgb(238, 222, 222), rgb(170, 120, 132)},
         {"Paper", true, rgb(238, 238, 210), rgb(118, 150, 86)},
         {"Sand", true, rgb(240, 217, 181), rgb(181, 136, 99)},
+        {"Crimson", false, rgb(240, 226, 220), rgb(176, 104, 104)},
+        {"Ember", false, rgb(241, 222, 196), rgb(196, 128, 80)},
+        {"Sunflower", false, rgb(240, 232, 196), rgb(186, 160, 84)},
+        {"Ocean", false, rgb(220, 234, 232), rgb(96, 150, 150)},
+        {"Amethyst", false, rgb(232, 224, 240), rgb(140, 112, 176)},
+        {"Lavender", true, rgb(232, 224, 240), rgb(140, 112, 176)},
+        {"Sky", true, rgb(222, 227, 230), rgb(140, 162, 173)},
+        {"Blossom", true, rgb(244, 226, 232), rgb(196, 128, 150)},
     }};
     return themes;
 }

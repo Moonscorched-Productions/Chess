@@ -47,7 +47,7 @@ and a link to the source code of that exact version.
 | `data/fonts/SourceSerif4-Regular.ttf` | Source Serif 4 by Frank Grießhammer, [Adobe](https://github.com/adobe-fonts/source-serif) | SIL Open Font License 1.1 (`data/fonts/OFL.txt`) |
 | `data/games/classics.pgn`, `data/repertoires` | Historical games and opening lines (this project) | GPL version 3, like the program |
 | `data/badges` | Drawn by `tools/make_badges.py` (this project) | GPL version 3, like the program |
-| `data/moon-pawn-icon.png` | Moonscorched Productions (this project) | GPL version 3, like the program |
+| `data/moon-pawn-icon.png`, `data/logo.png` | Moonscorched Productions (this project) | GPL version 3, like the program |
 
 Lichess is not affiliated with and does not endorse this program.
 

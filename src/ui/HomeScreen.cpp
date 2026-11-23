@@ -1,6 +1,7 @@
 #include "ui/HomeScreen.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -163,7 +164,17 @@ void HomeScreen::draw() {
 
     const ImGuiStyle& style = ImGui::GetStyle();
     const float columns = (width - style.ItemSpacing.x) * 0.5f;
-    const float height = 300.0f;
+    // Both panels are as tall as the shortcuts need (or the week chart and tip, if taller),
+    // so neither has to scroll.
+    constexpr float kButtonHeight = 36.0f;
+    const int buttons = puzzleQueue_.due > 0 ? 6 : 5;
+    const float titleHeight = app::titleFont()->FontSize;
+    const float actionsHeight = 2.0f * style.WindowPadding.y + titleHeight + 2.0f * style.ItemSpacing.y +
+                                static_cast<float>(buttons) * kButtonHeight + static_cast<float>(buttons - 1) * style.ItemSpacing.y;
+    const float line = ImGui::GetTextLineHeightWithSpacing();
+    const float weekHeight = 2.0f * style.WindowPadding.y + titleHeight + 2.0f * style.ItemSpacing.y + 110.0f + line +
+                             3.0f * style.ItemSpacing.y + 3.0f * line;
+    const float height = std::ceil(std::max(actionsHeight, weekHeight));
     drawActions(columns, height);
     ImGui::SameLine();
     drawWeek(columns, height);
@@ -282,7 +293,9 @@ void HomeScreen::drawTiles() {
 }
 
 void HomeScreen::drawActions(float width, float height) {
-    ImGui::BeginChild("##h-actions", ImVec2(width, height), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
+    constexpr float kButtonHeight = 36.0f;
+    ImGui::BeginChild("##h-actions", ImVec2(width, height), ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PushFont(app::titleFont());
     ImGui::TextUnformatted("Pick up where you left off");
     ImGui::PopFont();
@@ -292,7 +305,7 @@ void HomeScreen::drawActions(float width, float height) {
     const auto entry = [&](const char* label, const char* detail, Action action) {
         ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
         const std::string text = std::string(label) + "   ";
-        if (ImGui::Button(text.c_str(), ImVec2(buttonWidth, 36.0f))) action_ = action;
+        if (ImGui::Button(text.c_str(), ImVec2(buttonWidth, kButtonHeight))) action_ = action;
         ImGui::PopStyleVar();
         if (detail != nullptr) {
             // The detail sits at the right end of the button.
@@ -322,7 +335,8 @@ void HomeScreen::drawActions(float width, float height) {
 }
 
 void HomeScreen::drawWeek(float width, float height) {
-    ImGui::BeginChild("##h-week", ImVec2(width, height), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
+    ImGui::BeginChild("##h-week", ImVec2(width, height), ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PushFont(app::titleFont());
     ImGui::TextUnformatted("This week");
     ImGui::PopFont();

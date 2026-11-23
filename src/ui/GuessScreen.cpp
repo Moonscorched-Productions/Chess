@@ -321,14 +321,14 @@ void GuessScreen::drawChooser() {
 
     bool startRequested = false;
     const float footer = ImGui::GetFrameHeightWithSpacing() * 2.0f + ImGui::GetStyle().ItemSpacing.y;
-    if (ImGui::BeginTable("##guess-games", 2,
-                          ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerH |
-                              ImGuiTableFlags_SizingStretchProp,
-                          ImVec2(0.0f, std::max(ImGui::GetContentRegionAvail().y - footer, 120.0f)))) {
+    ImGui::BeginChild("##guess-card", ImVec2(0.0f, std::max(ImGui::GetContentRegionAvail().y - footer, 120.0f)),
+                      ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
+    if (ImGui::BeginTable("##guess-games", 2, ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
+                          ImVec2(0.0f, ImGui::GetContentRegionAvail().y))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Game", ImGuiTableColumnFlags_WidthStretch, 1.0f);
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch, 1.2f);
-        ImGui::TableHeadersRow();
+        tableHeaders();
         bool libraryHeader = false;
         for (std::size_t i = 0; i < choices_.size(); ++i) {
             const Choice& choice = choices_[i];
@@ -346,11 +346,9 @@ void GuessScreen::drawChooser() {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(static_cast<int>(i));
-            if (ImGui::Selectable(choice.title.c_str(), selected_ == static_cast<int>(i),
-                                  ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
-                selected_ = static_cast<int>(i);
-            }
-            const bool doubleClicked = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+            const RowClick click = tableRow(choice.title.c_str(), selected_ == static_cast<int>(i));
+            if (click.clicked) selected_ = static_cast<int>(i);
+            const bool doubleClicked = click.doubleClicked;
             ImGui::PopID();
             ImGui::TableSetColumnIndex(1);
             ImGui::TextDisabled("%s", choice.detail.c_str());
@@ -366,6 +364,7 @@ void GuessScreen::drawChooser() {
         }
         ImGui::EndTable();
     }
+    ImGui::EndChild();
 
     ImGui::Spacing();
     ImGui::AlignTextToFramePadding();
@@ -398,13 +397,10 @@ void GuessScreen::drawChooser() {
 }
 
 void GuessScreen::drawGame() {
-    const ImGuiStyle& style = ImGui::GetStyle();
-    const ImVec2 avail = ImGui::GetContentRegionAvail();
-    const float panelWidth = std::clamp(avail.x * 0.34f, 300.0f, 460.0f);
-    float boardSize = std::min(avail.x - panelWidth - style.ItemSpacing.x, avail.y);
-    boardSize = std::floor(std::max(boardSize, 240.0f) / 8.0f) * 8.0f;
-    const float used = boardSize + style.ItemSpacing.x + panelWidth;
-    if (avail.x > used) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::floor((avail.x - used) * 0.5f));
+    const BoardLayout layout = boardLayout(0.34f, 300.0f, 460.0f);
+    const float panelWidth = layout.panelWidth;
+    const float boardSize = layout.boardSize;
+    ImGui::SetCursorPosX(layout.boardX);
 
     BoardOptions options = boardOptionsFrom(settings_);
     options.flipped = side_ == Color::Black;
@@ -420,7 +416,7 @@ void GuessScreen::drawGame() {
     }
 
     const std::optional<core::Move> move = board_.draw(position_, assets_, options, boardSize);
-    ImGui::SameLine();
+    ImGui::SameLine(layout.panelX);
     drawPanel(panelWidth, boardSize);
     if (move) onGuess(*move);
 }
@@ -471,7 +467,7 @@ void GuessScreen::drawPanel(float width, float height) {
         ImGui::TableSetupColumn("Game move");
         ImGui::TableSetupColumn("Your guess");
         ImGui::TableSetupColumn("Points", ImGuiTableColumnFlags_WidthFixed, 50.0f);
-        ImGui::TableHeadersRow();
+        tableHeaders();
         for (const Attempt& attempt : attempts_) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);

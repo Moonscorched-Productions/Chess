@@ -38,8 +38,9 @@ Play:
 - Hints: "Hint" (or H) marks the piece Stockfish would move; pressing it again shows the move
   as an arrow. Hints come from a second engine process at full strength, whatever level the
   opponent plays at.
-- Six colour themes (Forest, Walnut, Midnight, Rosewood, Paper, Sand), each with matching
-  board colours, the Source Serif 4 font (or the system font), translucent panels and a
+- Fourteen colour themes, dark (Forest, Walnut, Midnight, Rosewood, Crimson, Ember, Sunflower,
+  Ocean, Amethyst) and light (Paper, Sand, Lavender, Sky, Blossom), each with matching board
+  colours, the Source Serif 4 font (or the system font), translucent panels and a
   slow, softly animated background that can be turned off in Settings.
 - Fullscreen with F11 or in Settings.
 - Your own sound effects: in Settings, "Choose..." picks a file (ogg, mp3, wav or flac) for the

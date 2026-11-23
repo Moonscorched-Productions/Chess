@@ -32,7 +32,7 @@ public:
     bool hasBadges() const { return badgesLoaded_; }
     ImTextureID badgesTexture() const;
 
-    // The Moonscorched Productions logo (data/moon-pawn-icon.png), if it was found.
+    // The Moonscorched Productions logo (data/logo.png), if it was found.
     bool hasLogo() const { return logoLoaded_; }
     ImTextureID logoTexture() const;
 

@@ -24,9 +24,10 @@ NodeId drawEvalGraph(const core::GameTree& tree, NodeId current, ImVec2 size,
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const ImVec2 end(origin.x + size.x, origin.y + size.y);
-    // The dark area is Black's share, the light area White's, in either colour scheme.
-    drawList->AddRectFilled(origin, end, IM_COL32(48, 46, 43, 255), 4.0f);
-    const ImU32 hintColor = IM_COL32(150, 150, 145, 255);
+    // The dark area is Black's share, the light area White's, tinted by the theme.
+    const EvalColors colors = evalColors();
+    drawList->AddRectFilled(origin, end, colors.black, 6.0f);
+    const ImU32 hintColor = ImGui::GetColorU32(ImGuiCol_TextDisabled);
 
     std::vector<NodeId> nodes{kRootNode};
     const std::vector<NodeId> mainLine = tree.mainLine();
@@ -64,10 +65,15 @@ NodeId drawEvalGraph(const core::GameTree& tree, NodeId current, ImVec2 size,
         if (!share[i] || !share[i + 1]) continue;
         const ImVec2 a(std::floor(xAt(i)), yAt(*share[i]));
         const ImVec2 b(std::floor(xAt(i + 1)), yAt(*share[i + 1]));
-        drawList->AddQuadFilled(a, b, ImVec2(b.x, end.y), ImVec2(a.x, end.y), IM_COL32(225, 225, 220, 255));
+        drawList->AddQuadFilled(a, b, ImVec2(b.x, end.y), ImVec2(a.x, end.y), colors.white);
     }
     drawList->Flags = savedFlags;
-    drawList->AddLine(ImVec2(origin.x, middle), ImVec2(end.x, middle), IM_COL32(200, 80, 60, 150), 1.0f);
+    // The curve itself, in the accent colour.
+    for (std::size_t i = 0; i + 1 < count; ++i) {
+        if (!share[i] || !share[i + 1]) continue;
+        drawList->AddLine(ImVec2(xAt(i), yAt(*share[i])), ImVec2(xAt(i + 1), yAt(*share[i + 1])), colors.marker, 1.5f);
+    }
+    drawList->AddLine(ImVec2(origin.x, middle), ImVec2(end.x, middle), colors.midline, 1.0f);
 
     // Mark moves that threw away a large part of the mover's expected score.
     if (quality) {
@@ -94,7 +100,7 @@ NodeId drawEvalGraph(const core::GameTree& tree, NodeId current, ImVec2 size,
     const auto found = std::find(nodes.begin(), nodes.end(), current);
     if (found != nodes.end()) {
         const float x = xAt(static_cast<std::size_t>(found - nodes.begin()));
-        drawList->AddLine(ImVec2(x, origin.y), ImVec2(x, end.y), IM_COL32(153, 204, 102, 255), 2.0f);
+        drawList->AddLine(ImVec2(x, origin.y), ImVec2(x, end.y), colors.marker, 2.0f);
     }
 
     if (!hovered) return kNoNode;
@@ -102,7 +108,7 @@ NodeId drawEvalGraph(const core::GameTree& tree, NodeId current, ImVec2 size,
     const std::size_t index = static_cast<std::size_t>(std::lround(relative * static_cast<float>(count - 1)));
     const NodeId id = nodes[index];
     const float x = xAt(index);
-    drawList->AddLine(ImVec2(x, origin.y), ImVec2(x, end.y), IM_COL32(255, 255, 255, 70), 1.0f);
+    drawList->AddLine(ImVec2(x, origin.y), ImVec2(x, end.y), ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.6f), 1.0f);
 
     std::string text = "Start position";
     if (id != kRootNode) {

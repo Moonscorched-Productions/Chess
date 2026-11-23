@@ -4,6 +4,7 @@
 #include <utility>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include "ui/Common.h"
 
@@ -31,7 +32,7 @@ void EndgameScreen::draw() {
     ImGui::Spacing();
 
     ImGui::BeginChild("##endgames", ImVec2(0.0f, 0.0f), ImGuiChildFlags_AlwaysUseWindowPadding);
-    const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp;
+    const ImGuiTableFlags flags = ImGuiTableFlags_SizingStretchProp;
     const char* category = "";
     bool tableOpen = false;
 
@@ -41,9 +42,8 @@ void EndgameScreen::draw() {
             category = position.category;
             ImGui::Spacing();
             ImGui::SeparatorText(category);
-            tableOpen = ImGui::BeginTable(category, 5, flags);
+            tableOpen = ImGui::BeginTable(category, 4, flags);
             if (tableOpen) {
-                ImGui::TableSetupColumn("##practise", ImGuiTableColumnFlags_WidthFixed, 96.0f);
                 ImGui::TableSetupColumn("Position", ImGuiTableColumnFlags_WidthStretch, 3.0f);
                 ImGui::TableSetupColumn("You play", ImGuiTableColumnFlags_WidthFixed, 150.0f);
                 ImGui::TableSetupColumn("Progress", ImGuiTableColumnFlags_WidthFixed, 130.0f);
@@ -55,23 +55,25 @@ void EndgameScreen::draw() {
         const auto found = progress_.find(position.id);
         const storage::EndgameProgress progress = found != progress_.end() ? found->second : storage::EndgameProgress{};
 
+        // The whole row starts the position.
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
         ImGui::PushID(position.id);
-        if (ImGui::Button("Practise", ImVec2(-1.0f, 0.0f))) startRequest_ = &position;
+        // The idea may wrap; the row (and its hover card) is as tall as it.
+        float height = 0.0f;
+        if (const ImGuiTable* table = ImGui::GetCurrentTable(); table != nullptr && table->ColumnsCount > 3) {
+            const float wrap = table->Columns[3].WorkMaxX - table->Columns[3].WorkMinX;
+            if (wrap > 0.0f) height = ImGui::CalcTextSize(position.hint, nullptr, false, wrap).y;
+        }
+        if (tableRow(position.name, false, height).clicked) startRequest_ = &position;
+        ImGui::SetItemTooltip("Practise this position against the engine");
         ImGui::PopID();
 
         ImGui::TableSetColumnIndex(1);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(position.name);
-
-        ImGui::TableSetColumnIndex(2);
-        ImGui::AlignTextToFramePadding();
         ImGui::Text("%s  \xC2\xB7  %s", position.userColor == core::Color::White ? "White" : "Black",
                     position.goal == core::EndgameGoal::Win ? "win" : "draw");
 
-        ImGui::TableSetColumnIndex(3);
-        ImGui::AlignTextToFramePadding();
+        ImGui::TableSetColumnIndex(2);
         if (progress.attempts == 0) {
             ImGui::TextDisabled("Not tried");
         } else if (progress.successes > 0) {
@@ -80,8 +82,7 @@ void EndgameScreen::draw() {
             ImGui::TextColored(kErrorColor, "0 of %d", progress.attempts);
         }
 
-        ImGui::TableSetColumnIndex(4);
-        ImGui::AlignTextToFramePadding();
+        ImGui::TableSetColumnIndex(3);
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled("%s", position.hint);
         ImGui::PopTextWrapPos();

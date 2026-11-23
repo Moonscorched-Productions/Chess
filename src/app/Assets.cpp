@@ -100,10 +100,12 @@ std::string Assets::load(const std::filesystem::path& dataDir) {
     }
 
     // Optional: without the sheet the badges are drawn from simple shapes.
-    logoLoaded_ = !dataDir.empty() && logo_.loadFromFile(dataDir / "moon-pawn-icon.png");
+    // data/logo.png ships with releases; the large icon source only exists in the repository.
+    logoLoaded_ = !dataDir.empty() && (logo_.loadFromFile(dataDir / "logo.png") ||
+                                       logo_.loadFromFile(dataDir / "moon-pawn-icon.png"));
     if (logoLoaded_) {
         logo_.setSmooth(true);
-        (void)logo_.generateMipmap();  // drawn far smaller than its 2048 pixels
+        (void)logo_.generateMipmap();  // drawn smaller than its size
     }
     badgesLoaded_ = !dataDir.empty() && badges_.loadFromFile(dataDir / "badges" / "badges.png");
     if (badgesLoaded_) {

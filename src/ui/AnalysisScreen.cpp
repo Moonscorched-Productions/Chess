@@ -166,16 +166,14 @@ void AnalysisScreen::drawExplorer(float height) {
         ImGui::TableSetupColumn("Move", ImGuiTableColumnFlags_WidthFixed, 70.0f);
         ImGui::TableSetupColumn("Games", ImGuiTableColumnFlags_WidthFixed, 56.0f);
         ImGui::TableSetupColumn(explorerMineOnly_ ? "Your results" : "White / draw / Black");
-        ImGui::TableHeadersRow();
+        tableHeaders();
         int total = 0;
         for (const storage::ExplorerMove& move : moves) total += explorerMineOnly_ ? move.mine : move.games;
         for (const storage::ExplorerMove& move : moves) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(move.uci.c_str());
-            if (ImGui::Selectable(move.san.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
-                explorerMove_ = core::parseUciMove(move.uci);
-            }
+            if (tableRow(move.san.c_str(), false).clicked) explorerMove_ = core::parseUciMove(move.uci);
             ImGui::PopID();
             const int games = explorerMineOnly_ ? move.mine : move.games;
             const int a = explorerMineOnly_ ? move.myWins : move.whiteWins;
@@ -621,15 +619,13 @@ void AnalysisScreen::draw() {
 
     const ImGuiStyle& style = ImGui::GetStyle();
     const ImVec2 avail = ImGui::GetContentRegionAvail();
-    const float panelWidth = std::clamp(avail.x * 0.36f, 300.0f, 520.0f);
-    float boardSize = std::min(avail.x - panelWidth - kEvalBarWidth - 2.0f * style.ItemSpacing.x,
-                               avail.y - kGraphHeight - style.ItemSpacing.y);
-    boardSize = std::floor(std::max(boardSize, 240.0f) / 8.0f) * 8.0f;
+    const BoardLayout layout = boardLayout(0.36f, 300.0f, 520.0f, kEvalBarWidth + style.ItemSpacing.x,
+                                           kGraphHeight + style.ItemSpacing.y);
+    const float panelWidth = layout.panelWidth;
+    const float boardSize = layout.boardSize;
     const float leftWidth = kEvalBarWidth + style.ItemSpacing.x + boardSize;
     const float columnHeight = boardSize + style.ItemSpacing.y + kGraphHeight;
-
-    const float used = leftWidth + style.ItemSpacing.x + panelWidth;
-    if (avail.x > used) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::floor((avail.x - used) * 0.5f));
+    ImGui::SetCursorPosX(layout.boardX);
 
     BoardOptions options = boardOptionsFrom(settings_);
     options.flipped = flipped_;
@@ -650,7 +646,7 @@ void AnalysisScreen::draw() {
     drawEvalGraph(ImVec2(leftWidth, kGraphHeight));
     ImGui::EndGroup();
 
-    ImGui::SameLine();
+    ImGui::SameLine(layout.panelX);
     // The panel uses the full height even when a narrow window keeps the board small.
     ImGui::BeginChild("##analysis-panel", ImVec2(panelWidth, std::max(columnHeight, avail.y)),
                       ImGuiChildFlags_AlwaysUseWindowPadding);

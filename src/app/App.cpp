@@ -738,11 +738,21 @@ void App::drawSidebar(float width, float height) {
     {
         ImGui::PushFont(titleFont());
         const ImVec2 titleSize = ImGui::CalcTextSize("Chess");
+        const float logoSize = assets_.hasLogo() ? std::round(titleSize.y * 1.25f) : 0.0f;
+        const float rowHeight = std::max(titleSize.y, logoSize) + 4.0f;
         const ImVec2 titlePos = ImGui::GetCursorScreenPos();
-        if (ImGui::InvisibleButton("##home", ImVec2(ImGui::GetContentRegionAvail().x, titleSize.y + 4.0f))) section_ = Section::Home;
+        if (ImGui::InvisibleButton("##home", ImVec2(ImGui::GetContentRegionAvail().x, rowHeight))) section_ = Section::Home;
         const bool hovered = ImGui::IsItemHovered();
         const ImU32 color = ImGui::GetColorU32(section_ == Section::Home || hovered ? ImGuiCol_CheckMark : ImGuiCol_Text);
-        ImGui::GetWindowDrawList()->AddText(ImVec2(titlePos.x, titlePos.y + 2.0f), color, "Chess");
+        ImDrawList* titleList = ImGui::GetWindowDrawList();
+        float textX = titlePos.x;
+        if (assets_.hasLogo()) {
+            const ImVec2 logoMin(titlePos.x, titlePos.y + (rowHeight - logoSize) * 0.5f);
+            titleList->AddImageRounded(assets_.logoTexture(), logoMin, ImVec2(logoMin.x + logoSize, logoMin.y + logoSize),
+                                       ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, logoSize * 0.22f);
+            textX += logoSize + 10.0f;
+        }
+        titleList->AddText(ImVec2(textX, titlePos.y + (rowHeight - titleSize.y) * 0.5f), color, "Chess");
         ImGui::PopFont();
         if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     }

@@ -489,7 +489,7 @@ void TrainingScreen::drawDashboard() {
         ImGui::TableSetupColumn("Games", ImGuiTableColumnFlags_WidthFixed, 54.0f);
         ImGui::TableSetupColumn("Won / drawn / lost", ImGuiTableColumnFlags_WidthFixed, 140.0f);
         ImGui::TableSetupColumn("Score");
-        ImGui::TableHeadersRow();
+        tableHeaders();
         for (const EngineResults& row : data.engine) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -544,7 +544,7 @@ void TrainingScreen::drawWeaknesses() {
         ImGui::TableSetupColumn("Pattern");
         ImGui::TableSetupColumn("Share", ImGuiTableColumnFlags_WidthFixed, 140.0f);
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 150.0f);
-        ImGui::TableHeadersRow();
+        tableHeaders();
         for (const auto& [motif, count] : ranked) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -593,7 +593,7 @@ void TrainingScreen::drawWeaknesses() {
         ImGui::TableSetupColumn("Move");
         ImGui::TableSetupColumn("Game");
         ImGui::TableSetupColumn("Better");
-        ImGui::TableHeadersRow();
+        tableHeaders();
         int shown = 0;
         for (std::size_t i = report.examples.size(); i-- > 0 && shown < 200;) {
             const core::MistakeExample& example = report.examples[i];
@@ -605,9 +605,7 @@ void TrainingScreen::drawWeaknesses() {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(static_cast<int>(i));
-            if (ImGui::Selectable(example.label.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
-                gameRequest_ = GameRequest{example.gameId, data_->examplePlies[i]};
-            }
+            if (tableRow(example.label.c_str(), false).clicked) gameRequest_ = GameRequest{example.gameId, data_->examplePlies[i]};
             if (ImGui::IsItemHovered()) {
                 std::string motifs;
                 for (const Motif motif : example.motifs) motifs += std::string(motifs.empty() ? "" : ", ") + core::motifName(motif);
@@ -627,10 +625,9 @@ void TrainingScreen::drawWeaknesses() {
 
 void TrainingScreen::drawDrill() {
     const ImGuiStyle& style = ImGui::GetStyle();
-    const ImVec2 avail = ImGui::GetContentRegionAvail();
-    const float panelWidth = std::clamp(avail.x * 0.34f, 300.0f, 460.0f);
-    float boardSize = std::min(avail.x - panelWidth - style.ItemSpacing.x, avail.y);
-    boardSize = std::floor(std::max(boardSize, 240.0f) / 8.0f) * 8.0f;
+    const BoardLayout layout = boardLayout(0.34f, 300.0f, 460.0f);
+    const float panelWidth = layout.panelWidth;
+    const float boardSize = layout.boardSize;
 
     if (!current_ && drillPhase_ == DrillPhase::Idle && !queue_.empty()) nextDrill();
     const core::MistakeExample* example = current_ && data_ ? &data_->report.examples[*current_] : nullptr;
@@ -646,6 +643,7 @@ void TrainingScreen::drawDrill() {
     } else if (triedMove_ && drillPhase_ == DrillPhase::Judging) {
         options.arrows.push_back(BoardArrow{triedMove_->from, triedMove_->to, kTriedArrow});
     }
+    ImGui::SetCursorPosX(layout.boardX);
     if (!example) {
         // An empty board would look broken; show the start position, not interactive.
         static const core::Game start;
@@ -654,7 +652,7 @@ void TrainingScreen::drawDrill() {
         const std::optional<core::Move> move = board_.draw(drillPosition_, assets_, options, boardSize);
         if (move) answerDrill(*move);
     }
-    ImGui::SameLine();
+    ImGui::SameLine(layout.panelX);
 
     ImGui::BeginChild("##drill-panel", ImVec2(panelWidth, boardSize), ImGuiChildFlags_AlwaysUseWindowPadding);
     ImGui::TextUnformatted("Mistake drill");

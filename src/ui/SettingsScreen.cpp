@@ -181,16 +181,20 @@ SettingsScreen::Changes SettingsScreen::draw() {
     {
         const auto& themes = app::uiThemes();
         ImGui::SetNextItemWidth(220.0f);
-        if (ImGui::BeginCombo("##uitheme", themes[static_cast<std::size_t>(s.uiTheme)].name)) {
-            for (std::size_t i = 0; i < themes.size(); ++i) {
-                const std::string label = std::string(themes[i].name) + (themes[i].light ? "  (light)" : "  (dark)");
-                if (ImGui::Selectable(label.c_str(), s.uiTheme == static_cast<int>(i))) {
-                    s.uiTheme = static_cast<int>(i);
-                    s.lightMode = themes[i].light;
-                    // Each theme comes with matching board colours; they can still be changed below.
-                    s.lightSquare = themes[i].boardLight;
-                    s.darkSquare = themes[i].boardDark;
-                    changes.any = true;
+        if (ImGui::BeginCombo("##uitheme", themes[static_cast<std::size_t>(s.uiTheme)].name, ImGuiComboFlags_HeightLargest)) {
+            // Dark themes first, then the light ones.
+            for (const bool light : {false, true}) {
+                ImGui::SeparatorText(light ? "Light" : "Dark");
+                for (std::size_t i = 0; i < themes.size(); ++i) {
+                    if (themes[i].light != light) continue;
+                    if (ImGui::Selectable(themes[i].name, s.uiTheme == static_cast<int>(i))) {
+                        s.uiTheme = static_cast<int>(i);
+                        s.lightMode = themes[i].light;
+                        // Each theme comes with matching board colours; they can still be changed below.
+                        s.lightSquare = themes[i].boardLight;
+                        s.darkSquare = themes[i].boardDark;
+                        changes.any = true;
+                    }
                 }
             }
             ImGui::EndCombo();
