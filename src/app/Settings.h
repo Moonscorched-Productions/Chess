@@ -66,6 +66,7 @@ struct Settings {
     bool discordPresence = true;     // show what you are doing in Discord (when it is running)
     // Names (comma separated) under which the user appears in game files; "You" is used by Play.
     std::string playerNames = "You";
+    std::string displayName;  // how the home page greets the user; empty = not asked yet
 
     // Appearance
     int uiTheme = 0;                // index into uiThemes()

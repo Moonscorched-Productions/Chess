@@ -9,6 +9,12 @@ personal game library (see `PRIMER.txt` for the feature list and phases).
 All five phases are implemented: core application, analysis, training, game review and the
 advanced features.
 
+Home:
+
+- Click "Chess" at the top of the sidebar for the home page: a greeting, your streak, time
+  today, puzzle rating and recent results, a chart of the week, a tip of the day and
+  shortcuts to what is due.
+
 Play:
 
 - Playable board: drag and drop or click to move, legal move hints, last move and check

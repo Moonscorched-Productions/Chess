@@ -50,6 +50,8 @@ public:
     void practiseTheme(std::string_view theme);
     // Loads the most overdue puzzle for review, if any.
     void startReview() { loadDue(); }
+    // Loads today's daily puzzle.
+    void startDaily() { loadDaily(); }
 
     // Test aid: the solution is played automatically, puzzle after puzzle.
     void setAutoSolve(bool enabled) { autoSolve_ = enabled; }

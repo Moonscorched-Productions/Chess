@@ -1,6 +1,7 @@
 #include "app/App.h"
 
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -28,6 +29,7 @@
 #include "ui/OpeningsScreen.h"
 #include "ui/PlayScreen.h"
 #include "ui/GuessScreen.h"
+#include "ui/HomeScreen.h"
 #include "ui/TrainingScreen.h"
 #include "ui/PuzzleScreen.h"
 #include "ui/QualityBadge.h"
@@ -149,6 +151,8 @@ Options Options::parse(int argc, char** argv) {
             options.guessGame = std::atoi(argv[++i]);
         } else if (arg == "--training" && hasValue) {
             options.trainingTab = std::atoi(argv[++i]);
+        } else if (arg == "--home") {
+            options.home = true;
         } else if (arg == "--theme" && hasValue) {
             options.theme = std::atoi(argv[++i]);
         } else if (arg == "--autoguess") {
@@ -289,6 +293,8 @@ App::App(const Options& options)
     guess_->setAutoGuess(options_.autoGuess);
     training_ = std::make_unique<ui::TrainingScreen>(settings_, assets_, store_ ? databaseFile : std::filesystem::path{},
                                                      trainingStore_.get());
+    home_ = std::make_unique<ui::HomeScreen>(settings_, assets_, store_.get(), puzzleStore_.get(), trainingStore_.get());
+    if (options_.home) section_ = Section::Home;
     if (options_.trainingTab >= 0) {
         training_->showTab(options_.trainingTab);
         section_ = Section::Training;
@@ -357,6 +363,7 @@ App::~App() {
     puzzles_.reset();
     guess_.reset();
     training_.reset();
+    home_.reset();
     openings_.reset();
     endgames_.reset();
     analysis_.reset();
@@ -419,6 +426,28 @@ void App::routeRequests() {
         }
     }
     if (training_->takeEndgameRequest()) section_ = Section::Endgames;
+
+    // Shortcuts on the home page.
+    if (home_->consumeSettingsChanged()) saveSettings();
+    switch (home_->takeAction()) {
+        case ui::HomeScreen::Action::None: break;
+        case ui::HomeScreen::Action::NewGame:
+            section_ = Section::Play;
+            play_->openNewGameDialog();
+            break;
+        case ui::HomeScreen::Action::DailyPuzzle:
+            section_ = Section::Puzzles;
+            puzzles_->startDaily();
+            break;
+        case ui::HomeScreen::Action::ReviewPuzzles:
+            section_ = Section::Puzzles;
+            puzzles_->startReview();
+            break;
+        case ui::HomeScreen::Action::Openings: section_ = Section::Openings; break;
+        case ui::HomeScreen::Action::Training: section_ = Section::Training; break;
+        case ui::HomeScreen::Action::Guess: section_ = Section::Guess; break;
+        case ui::HomeScreen::Action::Statistics: section_ = Section::Statistics; break;
+    }
     if (statistics_->consumeReviewRequest()) section_ = Section::Review;
 
     // Games sent to Game Review.
@@ -493,6 +522,7 @@ void App::updatePresence() {
         case Section::Puzzles: text = puzzles_->presence(); break;
         case Section::Guess: text = guess_->presence(); break;
         case Section::Training: text = training_->presence(); break;
+        case Section::Home: text.details = "On the home page"; break;
         case Section::Openings: text = openings_->presence(); break;
         case Section::Endgames:
             text.details = "Choosing an endgame to practise";
@@ -658,6 +688,7 @@ void App::frame() {
     if (section_ != shownSection_) {
         shownSection_ = section_;
         if (section_ == Section::Training) training_->onShow();
+        if (section_ == Section::Home) home_->onShow();
     }
     training_->update();
     if (section_ == Section::Openings) openings_->update();
@@ -703,50 +734,71 @@ void App::drawSidebar(float width, float height) {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_ChildBg));
     ImGui::Begin("##sidebar", nullptr, kFixedWindow);
 
-    ImGui::PushFont(titleFont());
-    ImGui::TextUnformatted("Chess");
-    ImGui::PopFont();
+    // The title opens the home page.
+    {
+        ImGui::PushFont(titleFont());
+        const ImVec2 titleSize = ImGui::CalcTextSize("Chess");
+        const ImVec2 titlePos = ImGui::GetCursorScreenPos();
+        if (ImGui::InvisibleButton("##home", ImVec2(ImGui::GetContentRegionAvail().x, titleSize.y + 4.0f))) section_ = Section::Home;
+        const bool hovered = ImGui::IsItemHovered();
+        const ImU32 color = ImGui::GetColorU32(section_ == Section::Home || hovered ? ImGuiCol_CheckMark : ImGuiCol_Text);
+        ImGui::GetWindowDrawList()->AddText(ImVec2(titlePos.x, titlePos.y + 2.0f), color, "Chess");
+        ImGui::PopFont();
+        if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    // The selected entry gets a highlight with an accent bar that glides to a new entry
-    // instead of jumping. It is drawn behind the entries (channel 0).
+    // Entries are drawn by hand so the hover box, the selection and the text share one shape.
+    // The selection glides to a newly chosen entry; it is drawn behind the text (channel 0).
+    constexpr float kEntryHeight = 34.0f;
+    constexpr float kTextInset = 14.0f;
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     drawList->ChannelsSplit(2);
-    drawList->ChannelsSetCurrent(1);
-    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.0f, 0.5f));
-    std::optional<ImVec2> target;
-    float itemWidth = 0.0f;
+    std::optional<float> target;
+    float entryX = 0.0f;
+    float entryWidth = 0.0f;
     for (const SectionInfo& info : kSections) {
         const bool selected = section_ == info.section;
-        const bool planned = info.plannedFor != nullptr;
-        if (planned) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 10.0f);
-        if (ImGui::Selectable(info.label, selected, ImGuiSelectableFlags_None, ImVec2(0.0f, 34.0f))) section_ = info.section;
-        if (selected) {
-            target = ImVec2(ImGui::GetItemRectMin().x - 10.0f, ImGui::GetItemRectMin().y);
-            itemWidth = ImGui::GetItemRectSize().x + 10.0f;
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        const float width = ImGui::GetContentRegionAvail().x;
+        ImGui::PushID(info.label);
+        if (ImGui::InvisibleButton("##entry", ImVec2(width, kEntryHeight))) section_ = info.section;
+        const bool hovered = ImGui::IsItemHovered();
+        ImGui::PopID();
+        drawList->ChannelsSetCurrent(0);
+        if (hovered && !selected) {
+            drawList->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + kEntryHeight), ImGui::GetColorU32(ImGuiCol_HeaderHovered), 8.0f);
         }
-        if (planned) ImGui::PopStyleColor();
+        drawList->ChannelsSetCurrent(1);
+        const ImVec4 text = ImGui::GetStyleColorVec4(info.plannedFor != nullptr ? ImGuiCol_TextDisabled : ImGuiCol_Text);
+        drawList->AddText(ImVec2(pos.x + kTextInset, pos.y + (kEntryHeight - ImGui::GetTextLineHeight()) * 0.5f),
+                          ImGui::ColorConvertFloat4ToU32(text), info.label);
+        if (selected) {
+            target = pos.y;
+            entryX = pos.x;
+            entryWidth = width;
+        }
+        // No gap between entries, so the pointer never falls between two of them.
+        ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + kEntryHeight + 2.0f));
     }
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
     if (target) {
-        const float dt = ImGui::GetIO().DeltaTime;
         if (sidebarIndicatorY_ < 0.0f || !settings_.animations) {
-            sidebarIndicatorY_ = target->y;
+            sidebarIndicatorY_ = *target;
         } else {
-            sidebarIndicatorY_ += (target->y - sidebarIndicatorY_) * std::min(1.0f, dt * 14.0f);
+            sidebarIndicatorY_ += (*target - sidebarIndicatorY_) * std::min(1.0f, ImGui::GetIO().DeltaTime * 14.0f);
+            if (std::abs(*target - sidebarIndicatorY_) < 0.5f) sidebarIndicatorY_ = *target;
         }
         drawList->ChannelsSetCurrent(0);
-        const ImVec2 min(target->x, sidebarIndicatorY_);
-        const ImVec2 max(target->x + itemWidth, sidebarIndicatorY_ + 34.0f);
+        const ImVec2 min(entryX, sidebarIndicatorY_);
+        const ImVec2 max(entryX + entryWidth, sidebarIndicatorY_ + kEntryHeight);
         drawList->AddRectFilled(min, max, ImGui::GetColorU32(ImGuiCol_Header), 8.0f);
-        drawList->AddRectFilled(ImVec2(min.x + 2.0f, min.y + 8.0f), ImVec2(min.x + 5.0f, max.y - 8.0f),
+        drawList->AddRectFilled(ImVec2(min.x + 3.0f, min.y + 9.0f), ImVec2(min.x + 6.0f, max.y - 9.0f),
                                 ImGui::GetColorU32(ImGuiCol_CheckMark), 2.0f);
+    } else {
+        sidebarIndicatorY_ = -1.0f;  // the home page: no entry selected
     }
     drawList->ChannelsMerge();
 
@@ -778,6 +830,8 @@ void App::drawContent(float x, float width, float height) {
         guess_->draw();
     } else if (section_ == Section::Training) {
         training_->draw();
+    } else if (section_ == Section::Home) {
+        home_->draw();
     } else if (section_ == Section::Library) {
         library_->draw();
     } else if (section_ == Section::Review) {

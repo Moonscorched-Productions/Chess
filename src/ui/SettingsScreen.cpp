@@ -7,7 +7,9 @@
 
 #include <imgui.h>
 
+#include "app/Assets.h"
 #include "app/FileDialog.h"
+#include "app/Theme.h"
 #include "app/Paths.h"
 #include "app/RichPresence.h"
 
@@ -170,6 +172,11 @@ SettingsScreen::Changes SettingsScreen::draw() {
     // --- Appearance -----------------------------------------------------------
     ImGui::Spacing();
     ImGui::SeparatorText("Appearance");
+    row("Your name");
+    // The home page may have set it meanwhile.
+    if (!nameEditing_ && s.displayName != displayName_.data()) fill(displayName_, s.displayName);
+    changes.any |= textField("##displayname", "How the home page greets you", displayName_, s.displayName);
+    nameEditing_ = ImGui::IsItemActive();
     row("Theme");
     {
         const auto& themes = app::uiThemes();
@@ -265,6 +272,26 @@ SettingsScreen::Changes SettingsScreen::draw() {
         ImGui::TextDisabled("%s", soundError_.c_str());
     }
     ImGui::EndDisabled();
+
+    // --- About ----------------------------------------------------------------
+    ImGui::Spacing();
+    ImGui::SeparatorText("About");
+    if (assets_.hasLogo()) {
+        const ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImGui::Dummy(ImVec2(64.0f, 64.0f));
+        ImGui::GetWindowDrawList()->AddImageRounded(assets_.logoTexture(), pos, ImVec2(pos.x + 64.0f, pos.y + 64.0f), ImVec2(0, 0),
+                                                    ImVec2(1, 1), IM_COL32_WHITE, 14.0f);
+        ImGui::SameLine(0.0f, 16.0f);
+    }
+    ImGui::BeginGroup();
+    ImGui::PushFont(app::titleFont());
+    ImGui::TextUnformatted("Chess");
+    ImGui::PopFont();
+    ImGui::TextUnformatted("Made by Am\xC3\xA9lie Heinrich, Moonscorched Productions.");
+    ImGui::TextDisabled("Free software under the GNU GPL version 3. Engine: Stockfish (GPL 3). Pieces: cburnett (GPL 2+).");
+    ImGui::TextDisabled("Opening names and puzzles from Lichess (CC0), sounds by Kenney (CC0), Source Serif 4 by Adobe (OFL).");
+    ImGui::TextDisabled("See THIRD_PARTY_NOTICES.md for the full list.");
+    ImGui::EndGroup();
 
     ImGui::EndChild();
 

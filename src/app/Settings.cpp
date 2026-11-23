@@ -176,6 +176,8 @@ Settings Settings::load(const std::filesystem::path& file) {
         } else if (key == "theme") {
             readInt(value, settings.uiTheme);
             sawTheme = true;
+        } else if (key == "display_name") {
+            settings.displayName = std::string(value);
         } else if (key == "serif_font") {
             readBool(value, settings.serifFont);
         } else if (key == "animated_background") {
@@ -248,6 +250,7 @@ bool Settings::save(const std::filesystem::path& file) const {
     out << "light_mode=" << (lightMode ? 1 : 0) << '\n';
     out << "theme=" << uiTheme << '\n';
     out << "serif_font=" << (serifFont ? 1 : 0) << '\n';
+    out << "display_name=" << displayName << '\n';
     out << "animated_background=" << (animatedBackground ? 1 : 0) << '\n';
     out << "play_as=" << (playAs == ColorChoice::Black ? "black" : playAs == ColorChoice::Random ? "random" : "white") << '\n';
     out << "play_against_engine=" << (playAgainstEngine ? 1 : 0) << '\n';
@@ -269,6 +272,9 @@ void Settings::sanitize() {
     if (playerNames.find_first_not_of(" ,") == std::string::npos) playerNames = "You";
     for (char& c : playerNames)
         if (c == '\n' || c == '\r') c = ' ';
+    for (char& c : displayName)
+        if (c == '\n' || c == '\r') c = ' ';
+    if (displayName.size() > 40) displayName.resize(40);
     level = std::clamp(level, 1, 8);
     elo = std::clamp(elo, 1320, 3190);
     thinkTimeMs = std::clamp(thinkTimeMs, 100, 30000);

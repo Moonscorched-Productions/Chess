@@ -34,6 +34,7 @@ class PlayScreen;
 class PuzzleScreen;
 class GuessScreen;
 class TrainingScreen;
+class HomeScreen;
 class ReviewScreen;
 class StatisticsScreen;
 class SettingsScreen;
@@ -41,7 +42,7 @@ class SettingsScreen;
 
 namespace app {
 
-enum class Section { Play, Analysis, Review, Training, Puzzles, Guess, Openings, Endgames, Library, Statistics, Settings };
+enum class Section { Home, Play, Analysis, Review, Training, Puzzles, Guess, Openings, Endgames, Library, Statistics, Settings };
 
 // Command line options. All of them are aids for automated checks.
 struct Options {
@@ -57,6 +58,7 @@ struct Options {
     bool openLibrary = false;        // --library: start on the Game Library section
     bool openPuzzles = false;        // --puzzles: start on the Puzzles section
     int guessGame = -1;              // --guess <n>: start guessing bundled game n
+    bool home = false;               // --home: start on the home page
     int theme = -1;                  // --theme <n>: colour theme (index into uiThemes())
     int trainingTab = -1;            // --training <tab>: open Training on a tab (0..2)
     bool autoGuess = false;          // --autoguess: guess random moves (test aid)
@@ -154,6 +156,7 @@ private:
     std::unique_ptr<ui::PuzzleScreen> puzzles_;
     std::unique_ptr<ui::GuessScreen> guess_;
     std::unique_ptr<ui::TrainingScreen> training_;
+    std::unique_ptr<ui::HomeScreen> home_;
     Section shownSection_ = Section::Play;  // to notice when a section is opened
     std::unique_ptr<ui::OpeningsScreen> openings_;
     std::unique_ptr<ui::EndgameScreen> endgames_;

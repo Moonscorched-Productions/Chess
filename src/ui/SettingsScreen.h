@@ -35,6 +35,8 @@ private:
     std::array<char, 512> syzygyPath_{};
     std::array<char, 512> comparePath_{};
     std::array<char, 512> compareOptions_{};
+    std::array<char, 512> displayName_{};
+    bool nameEditing_ = false;
     std::string detectedEngine_;
 };
 

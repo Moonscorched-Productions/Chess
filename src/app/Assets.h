@@ -32,6 +32,10 @@ public:
     bool hasBadges() const { return badgesLoaded_; }
     ImTextureID badgesTexture() const;
 
+    // The Moonscorched Productions logo (data/moon-pawn-icon.png), if it was found.
+    bool hasLogo() const { return logoLoaded_; }
+    ImTextureID logoTexture() const;
+
     // Plays a sound effect at the given volume (0..100).
     void play(SoundId id, int volume);
 
@@ -46,6 +50,8 @@ private:
     bool piecesLoaded_ = false;
     sf::Texture badges_;
     bool badgesLoaded_ = false;
+    sf::Texture logo_;
+    bool logoLoaded_ = false;
     std::array<sf::SoundBuffer, 3> buffers_;
     std::array<std::optional<sf::Sound>, 3> sounds_;
 };

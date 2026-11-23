@@ -454,18 +454,28 @@ void TrainingScreen::drawDashboard() {
     const int errors = report.mistakes + report.blunders;
     if (ranked.empty()) {
         ImGui::TextDisabled("None yet.");
-    } else {
-        const float labelWidth = ImGui::CalcTextSize("Allowed a discovered attack  ").x;
+    } else if (ImGui::BeginTable("##pattern-table", 3, ImGuiTableFlags_SizingFixedFit)) {
+        // The label column fits the longest name shown, so the bars never run into it.
+        float labelWidth = 0.0f;
+        for (std::size_t i = 0; i < ranked.size() && i < 7; ++i) {
+            labelWidth = std::max(labelWidth, ImGui::CalcTextSize(core::motifName(ranked[i].first)).x);
+        }
+        ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthFixed, labelWidth);
+        ImGui::TableSetupColumn("bar", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("count", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("000").x);
         for (std::size_t i = 0; i < ranked.size() && i < 7; ++i) {
             const auto& [motif, count] = ranked[i];
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
             ImGui::TextUnformatted(core::motifName(motif));
-            ImGui::SameLine(labelWidth);
-            const float barWidth = ImGui::GetContentRegionAvail().x - 70.0f;
-            bar(ImVec2(barWidth, ImGui::GetTextLineHeight()), errors > 0 ? static_cast<float>(count) / errors : 0.0f,
+            ImGui::TableSetColumnIndex(1);
+            bar(ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetTextLineHeight()),
+                errors > 0 ? static_cast<float>(count) / errors : 0.0f,
                 motif == Motif::Positional ? ImGui::GetColorU32(ImGuiCol_TextDisabled) : accentU32());
-            ImGui::SameLine();
+            ImGui::TableSetColumnIndex(2);
             ImGui::Text("%d", count);
         }
+        ImGui::EndTable();
     }
     ImGui::EndChild();
     ImGui::SameLine();

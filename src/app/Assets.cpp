@@ -100,6 +100,11 @@ std::string Assets::load(const std::filesystem::path& dataDir) {
     }
 
     // Optional: without the sheet the badges are drawn from simple shapes.
+    logoLoaded_ = !dataDir.empty() && logo_.loadFromFile(dataDir / "moon-pawn-icon.png");
+    if (logoLoaded_) {
+        logo_.setSmooth(true);
+        (void)logo_.generateMipmap();  // drawn far smaller than its 2048 pixels
+    }
     badgesLoaded_ = !dataDir.empty() && badges_.loadFromFile(dataDir / "badges" / "badges.png");
     if (badgesLoaded_) {
         badges_.setSmooth(true);
@@ -139,6 +144,7 @@ ImTextureID textureId(const sf::Texture& texture) {
 ImTextureID Assets::piecesTexture() const { return textureId(pieces_); }
 
 ImTextureID Assets::badgesTexture() const { return textureId(badges_); }
+ImTextureID Assets::logoTexture() const { return textureId(logo_); }
 
 void Assets::pieceUv(core::Piece piece, ImVec2& uv0, ImVec2& uv1) const {
     const sf::Vector2u size = pieces_.getSize();
