@@ -130,8 +130,93 @@ void PlayScreen::cancelEngineMove() {
     pendingMove_.reset();
 }
 
+// --- Hints -------------------------------------------------------------------
+
+namespace {
+constexpr int kHintThinkTimeMs = 1500;
+constexpr ImU32 kHintArrowColor = IM_COL32(40, 120, 210, 200);
+}  // namespace
+
+void PlayScreen::requestHint() {
+    if (!humanCanMove()) return;
+    // After an error, a new request starts over (and retries the engine).
+    if (game_.fen() != hintFen_ || !hintError_.empty()) clearHint();
+    hintError_.clear();
+    if (hintLevel_ >= 2) return;
+    ++hintLevel_;
+    hintFen_ = game_.fen();
+    notice_.clear();
+    if (hintMove_ || hintSearch_ != 0) return;
+
+    using State = engine::UciEngine::State;
+    if (hintEngine_.state() == State::Stopped || hintEngine_.state() == State::Failed) {
+        hintError_.clear();
+        const std::filesystem::path path = app::resolveEnginePath(settings_.enginePath);
+        std::string error;
+        if (path.empty()) {
+            hintError_ = "No chess engine found for hints. Set the engine path in Settings.";
+        } else if (!hintEngine_.start(path, &error)) {
+            hintError_ = error;
+        }
+        // The search starts once the engine reports Ready (see updateHint).
+        return;
+    }
+    if (hintEngine_.state() == State::Ready) {
+        hintSearch_ = hintEngine_.search(game_.startFen(), game_.uciMoves(), engine::SearchLimits{kHintThinkTimeMs, 0});
+    }
+}
+
+void PlayScreen::clearHint() {
+    if (hintSearch_ != 0) hintEngine_.stopSearch();
+    hintSearch_ = 0;
+    hintLevel_ = 0;
+    hintMove_.reset();
+    hintFen_.clear();
+}
+
+void PlayScreen::updateHint() {
+    for (const engine::EngineEvent& event : hintEngine_.poll()) {
+        switch (event.type) {
+            case engine::EngineEvent::Type::Ready:
+                hintError_.clear();
+                app::applyTablebases(hintEngine_, settings_);
+                app::applyExtraOptions(hintEngine_, settings_.engineOptions);
+                if (hintLevel_ > 0 && hintSearch_ == 0 && !hintMove_ && game_.fen() == hintFen_) {
+                    hintSearch_ = hintEngine_.search(game_.startFen(), game_.uciMoves(),
+                                                     engine::SearchLimits{kHintThinkTimeMs, 0});
+                }
+                break;
+            case engine::EngineEvent::Type::Info:
+                break;
+            case engine::EngineEvent::Type::BestMove:
+                if (event.searchId == hintSearch_) {
+                    hintSearch_ = 0;
+                    hintMove_ = core::parseUciMove(event.bestMove);
+                }
+                break;
+            case engine::EngineEvent::Type::Terminated:
+                hintSearch_ = 0;
+                hintError_ = event.message.empty() ? "The hint engine stopped unexpectedly." : event.message;
+                break;
+        }
+    }
+    // A hint belongs to one position: any move, undo or new game drops it.
+    if (hintLevel_ > 0 && game_.fen() != hintFen_) clearHint();
+}
+
+std::string PlayScreen::hintButtonLabel() const {
+    if (hintLevel_ > 0 && !hintMove_ && hintError_.empty()) {
+        return "Thinking" + std::string(static_cast<std::size_t>(ImGui::GetTime() * 3.0) % 4, '.');
+    }
+    if (hintLevel_ == 1) return "Show the move";
+    if (hintLevel_ >= 2) return "Hint shown";
+    return "Hint";
+}
+
 void PlayScreen::update() {
     using State = engine::UciEngine::State;
+
+    updateHint();
 
     for (const engine::EngineEvent& event : engine_.poll()) {
         switch (event.type) {
@@ -320,6 +405,9 @@ bool PlayScreen::consumeLibraryChanged() { return std::exchange(libraryChanged_,
 
 void PlayScreen::onSettingsChanged(bool enginePathChanged) {
     if (enginePathChanged) {
+        clearHint();
+        hintEngine_.shutdown();  // restarted with the new path on the next hint
+        hintError_.clear();
         cancelEngineMove();
         if (againstEngine_) startEngine();
     } else {
@@ -489,6 +577,10 @@ void PlayScreen::draw() {
     // Blindfold: play from the move list alone. The pieces come back when the game is over.
     options.hidePieces = !game_.isOver() && blindfoldHidden(settings_);
     if (options.hidePieces) options.showLegalMoves = false;
+    if (hintLevel_ > 0 && hintMove_ && humanCanMove()) {
+        options.highlights.push_back(hintMove_->from);
+        if (hintLevel_ >= 2) options.arrows.push_back(BoardArrow{hintMove_->from, hintMove_->to, kHintArrowColor});
+    }
 
     ImGui::BeginGroup();
     drawPlayerBar(topColor, boardSize);
@@ -583,6 +675,12 @@ void PlayScreen::drawSidePanel(float width, float height) {
         ImGui::PopTextWrapPos();
     }
 
+    if (!hintError_.empty() && hintLevel_ > 0) {
+        ImGui::PushStyleColor(ImGuiCol_Text, kErrorColor);
+        ImGui::TextWrapped("%s", hintError_.c_str());
+        ImGui::PopStyleColor();
+    }
+
     if (againstEngine_ && !engineError_.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, kErrorColor);
         ImGui::TextWrapped("%s", engineError_.c_str());
@@ -593,7 +691,7 @@ void PlayScreen::drawSidePanel(float width, float height) {
     ImGui::Separator();
 
     const float rowHeight = ImGui::GetFrameHeightWithSpacing();
-    const float buttonsHeight = rowHeight * (over ? 4.0f : 3.0f);
+    const float buttonsHeight = rowHeight * 4.0f;
     const float listHeight = std::max(ImGui::GetContentRegionAvail().y - buttonsHeight - style.ItemSpacing.y, 60.0f);
     drawMoveList(listHeight);
 
@@ -639,6 +737,14 @@ void PlayScreen::drawSidePanel(float width, float height) {
         settingsChanged_ = true;
     }
     ImGui::SetItemTooltip("Hide the pieces and play from memory (B). Hold Space to peek.");
+
+    if (!over) {
+        const bool waiting = hintLevel_ > 0 && !hintMove_ && hintError_.empty();
+        ImGui::BeginDisabled(!humanCanMove() || hintLevel_ >= 2 || waiting);
+        if (ImGui::Button((hintButtonLabel() + "###hint").c_str(), ImVec2(full, 0.0f))) requestHint();
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("First press: the piece to move. Second press: the move itself (H)");
+    }
 
     if (over && game_.ply() > 0) {
         if (ImGui::Button("Review game", ImVec2(full, 0.0f))) {
@@ -847,6 +953,7 @@ void PlayScreen::handleShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) undo();
     if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) redo();
     if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !io.KeyCtrl) flipped_ = !flipped_;
+    if (ImGui::IsKeyPressed(ImGuiKey_H, false) && !io.KeyCtrl) requestHint();
     if (ImGui::IsKeyPressed(ImGuiKey_N, false) && io.KeyCtrl) openNewGameDialog();
     if (ImGui::IsKeyPressed(ImGuiKey_B, false) && !io.KeyCtrl) {
         settings_.blindfold = !settings_.blindfold;

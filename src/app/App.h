@@ -1,11 +1,15 @@
 #pragma once
 
 #include <filesystem>
+#include <array>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <SFML/Graphics/RenderWindow.hpp>
 #include <SFML/System/Clock.hpp>
+#include <SFML/Window/Cursor.hpp>
+#include <imgui.h>
 
 #include "app/Assets.h"
 #include "chess/OpeningBook.h"
@@ -43,6 +47,7 @@ struct Options {
     unsigned height = 800;
     float screenshotAfter = 2.0f;    // --after <seconds>: when to take the screenshot
     bool autoplay = false;           // --autoplay: the human side plays random legal moves
+    int hintLevel = 0;               // --hint <1|2>: ask for a hint in Play (1 the piece, 2 the move)
     bool openSettings = false;       // --settings: start on the Settings section
     bool openNewGame = false;        // --new-game: start with the new game dialog open
     bool openAnalysis = false;       // --analysis: start on the Analysis section
@@ -89,6 +94,12 @@ public:
 private:
     // Updates and draws one frame. Does not pump window events.
     void frame();
+    // Window setup shared by the first window and every re-creation.
+    void configureWindow();
+    // Starts the ImGui frame. ImGui works in points; the window may report pixels.
+    void beginImGuiFrame();
+    void updateMouseCursor();
+    void renderImGui();
     void drawSidebar(float width, float height);
     void drawContent(float x, float width, float height);
     void saveSettings();
@@ -103,6 +114,9 @@ private:
     Settings settings_;
 
     sf::RenderWindow window_;
+    float pixelsPerPoint_ = 1.0f;  // window pixels per ImGui unit (2 on a Retina display)
+    std::array<std::optional<sf::Cursor>, ImGuiMouseCursor_COUNT> cursors_;
+    ImGuiMouseCursor lastCursor_ = ImGuiMouseCursor_COUNT;
     bool imguiReady_ = false;
     platform::LiveResize liveResize_;
     RichPresence presence_;

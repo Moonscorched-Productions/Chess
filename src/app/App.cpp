@@ -13,11 +13,13 @@
 #include <SFML/Graphics/Texture.hpp>
 #include <SFML/System/Clock.hpp>
 #include <SFML/Window/Event.hpp>
+#include <SFML/Window/Mouse.hpp>
 #include <imgui-SFML.h>
 #include <imgui.h>
 
 #include "app/Paths.h"
 #include "app/Theme.h"
+#include "platform/Platform.h"
 #include "chess/Pgn.h"
 #include "storage/GameStore.h"
 #include "ui/AnalysisScreen.h"
@@ -84,6 +86,8 @@ Options Options::parse(int argc, char** argv) {
                 options.width = w;
                 options.height = h;
             }
+        } else if (arg == "--hint" && hasValue) {
+            options.hintLevel = std::atoi(argv[++i]);
         } else if (arg == "--autoplay") {
             options.autoplay = true;
         } else if (arg == "--settings") {
@@ -160,6 +164,43 @@ std::filesystem::path databasePath(bool temporary) {
     return file;
 }
 
+// The same event with positions and sizes divided by `scale`: window pixels to ImGui points.
+sf::Event toPoints(const sf::Event& event, float scale) {
+    const auto point = [scale](sf::Vector2i p) { return sf::Vector2i(sf::Vector2f(p) / scale); };
+    if (const auto* e = event.getIf<sf::Event::MouseMoved>()) return sf::Event::MouseMoved{point(e->position)};
+    if (const auto* e = event.getIf<sf::Event::MouseButtonPressed>()) {
+        return sf::Event::MouseButtonPressed{e->button, point(e->position)};
+    }
+    if (const auto* e = event.getIf<sf::Event::MouseButtonReleased>()) {
+        return sf::Event::MouseButtonReleased{e->button, point(e->position)};
+    }
+    if (const auto* e = event.getIf<sf::Event::MouseWheelScrolled>()) {
+        return sf::Event::MouseWheelScrolled{e->wheel, e->delta, point(e->position)};
+    }
+    if (const auto* e = event.getIf<sf::Event::TouchBegan>()) return sf::Event::TouchBegan{e->finger, point(e->position)};
+    if (const auto* e = event.getIf<sf::Event::TouchMoved>()) return sf::Event::TouchMoved{e->finger, point(e->position)};
+    if (const auto* e = event.getIf<sf::Event::TouchEnded>()) return sf::Event::TouchEnded{e->finger, point(e->position)};
+    if (const auto* e = event.getIf<sf::Event::Resized>()) {
+        return sf::Event::Resized{sf::Vector2u(sf::Vector2f(e->size) / scale)};
+    }
+    return event;
+}
+
+std::optional<sf::Cursor::Type> systemCursor(ImGuiMouseCursor cursor) {
+    switch (cursor) {
+        case ImGuiMouseCursor_Arrow: return sf::Cursor::Type::Arrow;
+        case ImGuiMouseCursor_TextInput: return sf::Cursor::Type::Text;
+        case ImGuiMouseCursor_ResizeAll: return sf::Cursor::Type::SizeAll;
+        case ImGuiMouseCursor_ResizeNS: return sf::Cursor::Type::SizeVertical;
+        case ImGuiMouseCursor_ResizeEW: return sf::Cursor::Type::SizeHorizontal;
+        case ImGuiMouseCursor_ResizeNESW: return sf::Cursor::Type::SizeBottomLeftTopRight;
+        case ImGuiMouseCursor_ResizeNWSE: return sf::Cursor::Type::SizeTopLeftBottomRight;
+        case ImGuiMouseCursor_Hand: return sf::Cursor::Type::Hand;
+        case ImGuiMouseCursor_NotAllowed: return sf::Cursor::Type::NotAllowed;
+        default: return std::nullopt;
+    }
+}
+
 }  // namespace
 
 App::App(const Options& options)
@@ -167,8 +208,7 @@ App::App(const Options& options)
       settingsFile_(userDataDir() / "settings.ini"),
       settings_(options.temporarySettings ? Settings{} : Settings::load(settingsFile_)),
       window_(sf::VideoMode({options.width, options.height}), "Chess") {
-    window_.setVerticalSyncEnabled(true);
-    window_.setMinimumSize(sf::Vector2u{900u, 600u});
+    configureWindow();
 
     imguiReady_ = ImGui::SFML::Init(window_, false);
     if (!imguiReady_) return;
@@ -180,6 +220,7 @@ App::App(const Options& options)
     if (!options_.compareEngine.empty()) settings_.compareEnginePath = options_.compareEngine;
     if (!options_.syzygyPath.empty()) settings_.syzygyPath = options_.syzygyPath;
     windowedSize_ = sf::Vector2u{options_.width, options_.height};
+    setFontDensity(pixelsPerPoint_);
     applyAppearance();
 
     const std::string missing = assets_.load(findUpwards("data"));
@@ -192,6 +233,7 @@ App::App(const Options& options)
 
     play_ = std::make_unique<ui::PlayScreen>(settings_, assets_, store_.get());
     play_->setAutoplay(options_.autoplay);
+    for (int i = 0; i < options_.hintLevel && i < 2; ++i) play_->requestHint();
     if (options_.openNewGame) play_->openNewGameDialog();
     puzzleStore_ = storage::PuzzleStore::open(databaseFile);
     trainingStore_ = storage::TrainingStore::open(databaseFile);
@@ -393,15 +435,69 @@ void App::applyAppearance() {
 void App::applyWindowMode() {
     liveResize_.remove();
     if (settings_.fullscreen) {
-        if (!appliedFullscreen_) windowedSize_ = window_.getSize();
+        // Window sizes are given in points; getSize() may be in pixels.
+        if (!appliedFullscreen_) windowedSize_ = sf::Vector2u(sf::Vector2f(window_.getSize()) / pixelsPerPoint_);
         window_.create(sf::VideoMode::getDesktopMode(), "Chess", sf::State::Fullscreen);
     } else {
         window_.create(sf::VideoMode(windowedSize_), "Chess", sf::Style::Default, sf::State::Windowed);
     }
     appliedFullscreen_ = settings_.fullscreen;
-    window_.setVerticalSyncEnabled(true);
-    window_.setMinimumSize(sf::Vector2u{900u, 600u});
+    configureWindow();
+    lastCursor_ = ImGuiMouseCursor_COUNT;  // the new window starts with the default cursor
     liveResize_.install(reinterpret_cast<void*>(window_.getNativeHandle()), [this] { frame(); });
+}
+
+void App::configureWindow() {
+    window_.setVerticalSyncEnabled(true);
+    // Before high DPI is on: SFML hands the minimum to macOS in points but also clamps the
+    // current size against it, which goes wrong once sizes are in pixels.
+    window_.setMinimumSize(sf::Vector2u{900u, 600u});
+    platform::enableHighDpi(reinterpret_cast<void*>(window_.getNativeHandle()));
+    pixelsPerPoint_ = platform::windowScaleFactor(reinterpret_cast<void*>(window_.getNativeHandle()));
+}
+
+void App::beginImGuiFrame() {
+    // The scale changes when the window moves between a Retina and a normal display.
+    pixelsPerPoint_ = platform::windowScaleFactor(reinterpret_cast<void*>(window_.getNativeHandle()));
+    setFontDensity(pixelsPerPoint_);
+
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplayFramebufferScale = ImVec2(pixelsPerPoint_, pixelsPerPoint_);
+    if (pixelsPerPoint_ == 1.0f) {
+        ImGui::SFML::Update(window_, frameClock_.restart());
+        return;
+    }
+    // imgui-SFML reads the size and mouse position in window pixels; hand it points instead.
+    // This overload leaves the mouse cursor alone, so that is done here.
+    updateMouseCursor();
+    const sf::Vector2f mouse = sf::Vector2f(sf::Mouse::getPosition(window_)) / pixelsPerPoint_;
+    ImGui::SFML::Update(sf::Vector2i(mouse), sf::Vector2f(window_.getSize()) / pixelsPerPoint_, frameClock_.restart());
+}
+
+void App::updateMouseCursor() {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) return;
+    const ImGuiMouseCursor cursor = io.MouseDrawCursor ? ImGuiMouseCursor_None : ImGui::GetMouseCursor();
+    if (cursor == lastCursor_) return;
+    lastCursor_ = cursor;
+    if (cursor == ImGuiMouseCursor_None) {
+        window_.setMouseCursorVisible(false);
+        return;
+    }
+    window_.setMouseCursorVisible(true);
+    std::optional<sf::Cursor>& slot = cursors_[static_cast<std::size_t>(cursor)];
+    if (!slot) slot = sf::Cursor::createFromSystem(systemCursor(cursor).value_or(sf::Cursor::Type::Arrow));
+    if (slot) window_.setMouseCursor(*slot);
+}
+
+void App::renderImGui() {
+    ImGui::Render();
+    // imgui-SFML scales clip rectangles by the framebuffer scale twice. Undo one of them;
+    // its own ImGui::Render() call below then does nothing, as the frame is already rendered.
+    if (pixelsPerPoint_ != 1.0f) {
+        ImGui::GetDrawData()->ScaleClipRects(ImVec2(1.0f / pixelsPerPoint_, 1.0f / pixelsPerPoint_));
+    }
+    ImGui::SFML::Render(window_);
 }
 
 void App::saveSettings() {
@@ -420,7 +516,7 @@ int App::run() {
 
     while (window_.isOpen()) {
         while (const std::optional event = window_.pollEvent()) {
-            ImGui::SFML::ProcessEvent(window_, *event);
+            ImGui::SFML::ProcessEvent(window_, toPoints(*event, pixelsPerPoint_));
             if (event->is<sf::Event::Closed>()) window_.close();
             if (const auto* key = event->getIf<sf::Event::KeyPressed>(); key != nullptr && key->code == sf::Keyboard::Key::F11) {
                 settings_.fullscreen = !settings_.fullscreen;
@@ -447,7 +543,7 @@ void App::frame() {
     const sf::Vector2u size = window_.getSize();
     if (size.x == 0 || size.y == 0) return;  // minimized
 
-    ImGui::SFML::Update(window_, frameClock_.restart());
+    beginImGuiFrame();
 
     play_->update();
     analysis_->update(section_ == Section::Analysis);
@@ -464,7 +560,7 @@ void App::frame() {
     drawContent(sidebarWidth, display.x - sidebarWidth, display.y);
 
     window_.clear(settings_.lightMode ? sf::Color(237, 235, 231) : sf::Color(22, 21, 18));
-    ImGui::SFML::Render(window_);
+    renderImGui();
     if (screenshotRequested_) {
         screenshotRequested_ = false;
         screenshotSaved_ = saveScreenshot();

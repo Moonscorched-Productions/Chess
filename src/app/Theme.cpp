@@ -18,6 +18,7 @@ namespace {
 
 ImFont* gHeadlineFont = nullptr;
 bool gFontsLoaded = false;
+float gFontDensity = 1.0f;
 
 void loadFonts() {
     ImGuiIO& io = ImGui::GetIO();
@@ -27,16 +28,19 @@ void loadFonts() {
     const std::vector<std::filesystem::path> candidates = platform::uiFontCandidates();
     bool loaded = false;
     std::error_code ec;
+    // Sizes stay in points; on a high-DPI display the glyphs are rasterized with more pixels.
+    ImFontConfig config;
+    config.RasterizerDensity = gFontDensity;
     for (const std::filesystem::path& file : candidates) {
         const std::string path = pathToUtf8(file);
         if (!std::filesystem::exists(file, ec)) continue;
-        if (io.Fonts->AddFontFromFileTTF(path.c_str(), 18.0f) != nullptr) {
-            gHeadlineFont = io.Fonts->AddFontFromFileTTF(path.c_str(), 32.0f);
+        if (io.Fonts->AddFontFromFileTTF(path.c_str(), 18.0f, &config) != nullptr) {
+            gHeadlineFont = io.Fonts->AddFontFromFileTTF(path.c_str(), 32.0f, &config);
             loaded = true;
             break;
         }
     }
-    if (!loaded) io.Fonts->AddFontDefault();
+    if (!loaded) io.Fonts->AddFontDefault(&config);
     (void)ImGui::SFML::UpdateFontTexture();
     gFontsLoaded = true;
 }
@@ -78,6 +82,12 @@ constexpr Palette kLight = {
 };
 
 }  // namespace
+
+void setFontDensity(float pixelsPerPoint) {
+    if (pixelsPerPoint <= 0.0f || pixelsPerPoint == gFontDensity) return;
+    gFontDensity = pixelsPerPoint;
+    if (gFontsLoaded) loadFonts();
+}
 
 ImFont* headlineFont() { return gHeadlineFont != nullptr ? gHeadlineFont : ImGui::GetFont(); }
 

@@ -158,3 +158,11 @@ SharedLibrary::~SharedLibrary() {
 void* SharedLibrary::symbol(const char* name) const { return dlsym(handle_, name); }
 
 }  // namespace platform
+
+#ifndef __APPLE__
+// macOS has its own implementation in macos/HighDpiMac.mm; X11 windows need nothing.
+namespace platform {
+void enableHighDpi(void*) {}
+float windowScaleFactor(void*) { return 1.0f; }
+}  // namespace platform
+#endif

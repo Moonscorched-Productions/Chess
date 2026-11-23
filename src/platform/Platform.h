@@ -31,6 +31,17 @@ std::vector<std::filesystem::path> uiFontCandidates();
 // the executable permission elsewhere).
 bool isExecutableFile(const std::filesystem::path& file);
 
+// --- Windows ---------------------------------------------------------------------
+
+// Makes an SFML window render at the display's full pixel resolution (Retina on macOS).
+// Afterwards SFML reports window sizes and mouse positions in pixels. `window` is the
+// native handle (an NSWindow on macOS). Call again after every window (re)creation.
+// Does nothing on other platforms.
+void enableHighDpi(void* window);
+
+// Pixels per point of the window: 2 on a Retina display after enableHighDpi, otherwise 1.
+float windowScaleFactor(void* window);
+
 // --- File dialogs ----------------------------------------------------------------
 
 struct FileType {

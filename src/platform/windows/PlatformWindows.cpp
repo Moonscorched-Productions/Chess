@@ -100,3 +100,9 @@ void* SharedLibrary::symbol(const char* name) const {
 }
 
 }  // namespace platform
+
+namespace platform {
+// The window is not DPI-aware: Windows scales it, and SFML sizes stay in window units.
+void enableHighDpi(void*) {}
+float windowScaleFactor(void*) { return 1.0f; }
+}  // namespace platform

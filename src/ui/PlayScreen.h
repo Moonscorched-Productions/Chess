@@ -47,6 +47,9 @@ public:
     // Test aid: the human side plays random legal moves.
     void setAutoplay(bool enabled) { autoplay_ = enabled; }
 
+    // Hints: the first request marks the piece to move, the second shows the move.
+    void requestHint();
+
     // Two short lines describing the current game, for Discord Rich Presence.
     app::PresenceText presence() const;
 
@@ -80,6 +83,10 @@ private:
     void applyEngineOptions();
     void requestEngineMove();
     void cancelEngineMove();
+
+    void clearHint();
+    void updateHint();
+    std::string hintButtonLabel() const;
 
     void startNewGame(bool againstEngine, app::ColorChoice playAs, const std::string& fen);
     void playMove(core::Move move);
@@ -121,6 +128,15 @@ private:
     std::optional<std::string> pendingMove_;  // engine move waiting for the minimum delay
     Clock::time_point moveNotBefore_{};
     std::optional<int> engineScoreCp_;  // last evaluation, from the engine's point of view
+
+    // Hints come from a separate engine at full strength, started on the first request:
+    // the opponent engine may be playing at a reduced level.
+    engine::UciEngine hintEngine_;
+    std::string hintError_;
+    int hintLevel_ = 0;                 // 0 none, 1 piece, 2 move
+    std::string hintFen_;               // the position the hint is for
+    int hintSearch_ = 0;                // id of the running hint search, 0 = none
+    std::optional<core::Move> hintMove_;
 
     // Transient UI state.
     std::string notice_;  // e.g. the answer to a draw offer

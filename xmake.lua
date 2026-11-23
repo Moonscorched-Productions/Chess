@@ -37,6 +37,10 @@ target("platform")
     else
         add_files("src/platform/posix/*.cpp")
         add_syslinks("dl", {public = true})
+        if is_plat("macosx") then
+            add_files("src/platform/macos/*.mm")
+            add_frameworks("AppKit", "OpenGL", {public = true})
+        end
     end
 
 -- UCI engine communication. No rendering or UI dependencies.
@@ -61,7 +65,10 @@ target("chess")
     add_packages("imgui-sfml", "sfml", "imgui", "nanosvg")
     if is_plat("windows") then
         add_ldflags("/SUBSYSTEM:WINDOWS", {force = true})
-
+    elseif is_plat("macosx") then
+        -- Static SFML keeps Objective-C category methods (e.g. -[SFOpenGLView enableKeyRepeat])
+        -- in object files the linker would otherwise drop; -ObjC forces them in.
+        add_ldflags("-ObjC", {force = true})
     end
     -- Optional Discord Rich Presence: enabled when the Discord Game SDK has been unpacked
     -- into third_party/discord_game_sdk (see README). The DLL is loaded at run time.

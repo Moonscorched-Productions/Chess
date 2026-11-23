@@ -21,6 +21,9 @@ Play:
   process and never blocks the window.
 - Blindfold mode: the pieces are hidden and you play from the move list (B switches it,
   holding Space peeks). It also works in Puzzles.
+- Hints: "Hint" (or H) marks the piece Stockfish would move; pressing it again shows the move
+  as an arrow. Hints come from a second engine process at full strength, whatever level the
+  opponent plays at.
 - Fullscreen with F11 or in Settings.
 - Settings (engine, dark or light mode, board colours, hints, sound) saved to
   `%APPDATA%\ChessDesktop\settings.ini`.
@@ -186,6 +189,7 @@ Settings.
 | Home / End | Analysis and Game Review: start / end of the line |
 | Ctrl+V | Analysis: paste a FEN or PGN |
 | F | Flip the board |
+| H | Play: hint (first the piece, then the move) |
 | F11 | Fullscreen on / off |
 | B / hold Space | Play and Puzzles: blindfold on / off, peek at the pieces |
 | Ctrl+N | New game |
