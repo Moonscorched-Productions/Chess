@@ -11,6 +11,7 @@
 #include <imgui.h>
 
 #include "app/Assets.h"
+#include "app/GameAnalyzer.h"
 #include "app/Paths.h"
 #include "chess/Pgn.h"
 #include "storage/GameStore.h"
@@ -104,6 +105,8 @@ void PlayScreen::applyEngineOptions() {
             engine_.setOption("Skill Level", std::to_string(value));
         }
     }
+    app::applyTablebases(engine_, settings_);
+    app::applyExtraOptions(engine_, settings_.engineOptions);
 }
 
 void PlayScreen::requestEngineMove() {
@@ -309,6 +312,8 @@ app::PresenceText PlayScreen::presence() const {
     return text;
 }
 
+std::optional<PlayScreen::ReviewRequest> PlayScreen::takeReviewRequest() { return std::exchange(reviewRequest_, std::nullopt); }
+
 std::optional<core::GameRecord> PlayScreen::takeAnalysisRequest() { return std::exchange(analysisRequest_, std::nullopt); }
 
 bool PlayScreen::consumeLibraryChanged() { return std::exchange(libraryChanged_, false); }
@@ -481,6 +486,9 @@ void PlayScreen::draw() {
     BoardOptions options = boardOptionsFrom(settings_);
     options.flipped = flipped_;
     options.interactive = humanCanMove();
+    // Blindfold: play from the move list alone. The pieces come back when the game is over.
+    options.hidePieces = !game_.isOver() && blindfoldHidden(settings_);
+    if (options.hidePieces) options.showLegalMoves = false;
 
     ImGui::BeginGroup();
     drawPlayerBar(topColor, boardSize);
@@ -585,7 +593,7 @@ void PlayScreen::drawSidePanel(float width, float height) {
     ImGui::Separator();
 
     const float rowHeight = ImGui::GetFrameHeightWithSpacing();
-    const float buttonsHeight = rowHeight * 3.0f;
+    const float buttonsHeight = rowHeight * (over ? 4.0f : 3.0f);
     const float listHeight = std::max(ImGui::GetContentRegionAvail().y - buttonsHeight - style.ItemSpacing.y, 60.0f);
     drawMoveList(listHeight);
 
@@ -615,7 +623,7 @@ void PlayScreen::drawSidePanel(float width, float height) {
     if (ImGui::Button(againstEngine_ ? "Offer draw" : "Draw", size)) offerDraw();
     ImGui::EndDisabled();
 
-    const ImVec2 half((full - style.ItemSpacing.x) * 0.5f, 0.0f);
+    const ImVec2 half = size;
     if (ImGui::Button("Copy FEN", half)) {
         ImGui::SetClipboardText(game_.fen().c_str());
         notice_ = "Position copied to the clipboard.";
@@ -625,6 +633,21 @@ void PlayScreen::drawSidePanel(float width, float height) {
     if (ImGui::Button("Analyse", half)) analysisRequest_ = currentRecord();
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("Open this game in Analysis");
+    ImGui::SameLine();
+    if (ImGui::Button(settings_.blindfold ? "Show pieces" : "Blindfold", size)) {
+        settings_.blindfold = !settings_.blindfold;
+        settingsChanged_ = true;
+    }
+    ImGui::SetItemTooltip("Hide the pieces and play from memory (B). Hold Space to peek.");
+
+    if (over && game_.ply() > 0) {
+        if (ImGui::Button("Review game", ImVec2(full, 0.0f))) {
+            // Only a game that is stored in this very state counts in the statistics.
+            const bool stored = savedGameId_ && savedPly_ == game_.ply() && savedResult_ == game_.result();
+            reviewRequest_ = ReviewRequest{currentRecord(), stored ? savedGameId_ : std::nullopt};
+        }
+        ImGui::SetItemTooltip("Let the engine check every move: accuracy, mistakes and key moments");
+    }
 
     ImGui::EndChild();
 }
@@ -825,6 +848,10 @@ void PlayScreen::handleShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) redo();
     if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !io.KeyCtrl) flipped_ = !flipped_;
     if (ImGui::IsKeyPressed(ImGuiKey_N, false) && io.KeyCtrl) openNewGameDialog();
+    if (ImGui::IsKeyPressed(ImGuiKey_B, false) && !io.KeyCtrl) {
+        settings_.blindfold = !settings_.blindfold;
+        settingsChanged_ = true;
+    }
 }
 
 }  // namespace ui

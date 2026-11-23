@@ -23,6 +23,7 @@ struct ThemeChoice {
 
 constexpr ThemeChoice kThemes[] = {
     {"Any theme", ""},
+    {"From my games", "fromMyGames"},
     {"Fork", "fork"},
     {"Pin", "pin"},
     {"Skewer", "skewer"},
@@ -74,6 +75,8 @@ PuzzleScreen::~PuzzleScreen() {
     importCancel_ = true;
     if (importThread_.joinable()) importThread_.join();
 }
+
+bool PuzzleScreen::consumeSettingsChanged() { return std::exchange(settingsChanged_, false); }
 
 std::optional<core::GameRecord> PuzzleScreen::takeAnalysisRequest() { return std::exchange(analysisRequest_, std::nullopt); }
 
@@ -317,6 +320,13 @@ void PuzzleScreen::draw() {
     BoardOptions options = boardOptionsFrom(settings_);
     options.flipped = session_.active() && solver == core::Color::Black;
     options.interactive = solving && !session_.replyPending() && session_.game().sideToMove() == solver;
+    // Blindfold: the pieces stay hidden until the puzzle is over (or Space is held).
+    options.hidePieces = solving && blindfoldHidden(settings_);
+    if (options.hidePieces) options.showLegalMoves = false;
+    if (ImGui::IsKeyPressed(ImGuiKey_B, false) && !ImGui::GetIO().WantTextInput && !ImGui::GetIO().KeyCtrl) {
+        settings_.blindfold = !settings_.blindfold;
+        settingsChanged_ = true;
+    }
     if (solving && hintLevel_ > 0) {
         if (const std::optional<core::Move> expected = session_.expectedMove()) {
             options.highlights.push_back(expected->from);
@@ -450,6 +460,8 @@ void PuzzleScreen::drawSidePanel(float width, float height) {
         }
         ImGui::EndCombo();
     }
+    if (ImGui::Checkbox("Blindfold", &settings_.blindfold)) settingsChanged_ = true;
+    ImGui::SetItemTooltip("Solve without seeing the pieces (B). Hold Space to peek.");
 
     if (importRunning_.load()) {
         ImGui::AlignTextToFramePadding();

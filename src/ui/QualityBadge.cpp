@@ -9,6 +9,14 @@ namespace {
 
 constexpr float kPi = 3.14159265f;
 
+// Geometry of the badge sheet, see tools/make_badges.py.
+constexpr float kSheetCells = 6.0f;
+constexpr float kCellSize = 128.0f;
+constexpr float kDiscRadius = 54.0f;
+
+ImTextureID gSheet{};
+bool gHasSheet = false;
+
 void drawStar(ImDrawList* drawList, ImVec2 center, float radius, ImU32 color) {
     // Ten points alternating between the outer and inner radius, filled as a fan from the centre.
     std::array<ImVec2, 10> points;
@@ -43,14 +51,19 @@ void drawLabel(ImDrawList* drawList, ImVec2 center, float radius, const char* te
 
 }  // namespace
 
+void setQualityBadgeSheet(ImTextureID texture) {
+    gSheet = texture;
+    gHasSheet = true;
+}
+
 ImU32 qualityColor(core::MoveQuality quality) {
     switch (quality) {
-        case core::MoveQuality::Best: return IM_COL32(104, 170, 62, 255);
-        case core::MoveQuality::Excellent: return IM_COL32(104, 170, 62, 255);
-        case core::MoveQuality::Good: return IM_COL32(122, 150, 104, 255);
-        case core::MoveQuality::Inaccuracy: return IM_COL32(232, 184, 48, 255);
-        case core::MoveQuality::Mistake: return IM_COL32(232, 132, 44, 255);
-        case core::MoveQuality::Blunder: return IM_COL32(212, 62, 52, 255);
+        case core::MoveQuality::Best: return IM_COL32(129, 182, 76, 255);
+        case core::MoveQuality::Excellent: return IM_COL32(129, 182, 76, 255);
+        case core::MoveQuality::Good: return IM_COL32(119, 153, 108, 255);
+        case core::MoveQuality::Inaccuracy: return IM_COL32(240, 190, 48, 255);
+        case core::MoveQuality::Mistake: return IM_COL32(236, 140, 54, 255);
+        case core::MoveQuality::Blunder: return IM_COL32(222, 62, 48, 255);
         case core::MoveQuality::None: break;
     }
     return IM_COL32(0, 0, 0, 0);
@@ -58,6 +71,14 @@ ImU32 qualityColor(core::MoveQuality quality) {
 
 void drawQualityBadge(ImDrawList* drawList, ImVec2 center, float radius, core::MoveQuality quality) {
     if (quality == core::MoveQuality::None || radius < 2.0f) return;
+    if (gHasSheet) {
+        // The disc fills only part of its cell; scale so that it gets the requested radius.
+        const float half = radius * (kCellSize * 0.5f) / kDiscRadius;
+        const float cell = static_cast<float>(static_cast<int>(quality) - 1);
+        drawList->AddImage(gSheet, ImVec2(center.x - half, center.y - half), ImVec2(center.x + half, center.y + half),
+                           ImVec2(cell / kSheetCells, 0.0f), ImVec2((cell + 1.0f) / kSheetCells, 1.0f));
+        return;
+    }
     const ImU32 white = IM_COL32(255, 255, 255, 255);
 
     // A thin dark rim keeps the badge readable on light squares and light pieces.

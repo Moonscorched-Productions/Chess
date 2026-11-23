@@ -11,8 +11,19 @@
 
 namespace ui {
 
-inline constexpr ImVec4 kErrorColor(0.90f, 0.42f, 0.38f, 1.0f);
-inline constexpr ImVec4 kAccentColor(0.60f, 0.80f, 0.40f, 1.0f);
+// Text colours for errors and highlights. They follow the colour scheme, see setColorScheme().
+inline ImVec4 kErrorColor(0.90f, 0.42f, 0.38f, 1.0f);
+inline ImVec4 kAccentColor(0.60f, 0.80f, 0.40f, 1.0f);
+
+// Adapts the colours above to the dark or light application style.
+void setColorScheme(bool light);
+
+// Engines report a tablebase win as a score of about 200 pawns.
+inline constexpr int kTablebaseScore = 15000;
+
+// True while the pieces should be hidden: blindfold mode is on and the user is not
+// holding Space to peek.
+bool blindfoldHidden(const app::Settings& settings);
 
 // Board appearance options taken from the user's settings.
 BoardOptions boardOptionsFrom(const app::Settings& settings);

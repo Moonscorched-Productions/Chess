@@ -257,6 +257,8 @@ std::optional<core::Move> BoardView::draw(const core::Game& game, const app::Ass
     };
 
     for (Square square = 0; square < 64; ++square) fill(square, isLightSquare(square) ? options.lightSquare : options.darkSquare);
+    for (const SquareTint& tint : options.tints)
+        if (core::isValidSquare(tint.square)) fill(tint.square, tint.color);
 
     if (options.highlightLastMove) {
         if (const std::optional<core::Move> last = game.lastMove()) {
@@ -298,7 +300,7 @@ std::optional<core::Move> BoardView::draw(const core::Game& game, const app::Ass
 
     for (Square square = 0; square < 64; ++square) {
         const core::Piece piece = game.pieceAt(square);
-        if (piece.empty()) continue;
+        if (piece.empty() || options.hidePieces) continue;
         if (showDrag && square == selected_) continue;
         if (promotionPending && square == promotionFrom_) continue;
         drawPiece(drawList, assets, piece, layout.topLeft(square), sq);
@@ -339,7 +341,7 @@ std::optional<core::Move> BoardView::draw(const core::Game& game, const app::Ass
         drawArrow(drawList, layout, BoardArrow{markStart_, hoverSquare, kUserArrowColor});
     }
 
-    if (showDrag) {
+    if (showDrag && !options.hidePieces) {
         const float dragSize = sq * 1.1f;
         drawPiece(ImGui::GetForegroundDrawList(), assets, game.pieceAt(selected_),
                   ImVec2(mouse.x - dragSize * 0.5f, mouse.y - dragSize * 0.5f), dragSize);

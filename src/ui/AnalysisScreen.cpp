@@ -5,16 +5,18 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
-#include <thread>
 #include <utility>
 
 #include <imgui.h>
 
 #include "app/Assets.h"
 #include "app/FileDialog.h"
+#include "app/GameAnalyzer.h"
 #include "app/Paths.h"
 #include "chess/Pgn.h"
+#include "chess/Position.h"
 #include "ui/Common.h"
+#include "ui/EvalGraph.h"
 #include "ui/QualityBadge.h"
 
 namespace ui {
@@ -45,12 +47,46 @@ std::string trimmed(std::string text) {
     return text.substr(start);
 }
 
+// An engine line (UCI moves) played out from a position and written in SAN.
+struct SanLine {
+    std::string text;
+    core::Move first;
+    bool valid = false;
+};
+
+SanLine sanLine(const std::string& fen, const std::string& pv) {
+    SanLine result;
+    core::Game scratch;
+    scratch.setEnforceDraws(false);
+    if (!scratch.reset(fen)) return result;
+    int moveNumber = scratch.fullMoveNumber();
+    bool white = scratch.sideToMove() == Color::White;
+    std::size_t pos = 0;
+    for (int played = 0; played < kPvMoves && pos < pv.size(); ++played) {
+        const std::size_t end = std::min(pv.find(' ', pos), pv.size());
+        if (!scratch.makeUciMove(std::string_view(pv).substr(pos, end - pos))) break;
+        if (white) {
+            result.text += std::to_string(moveNumber) + ". ";
+        } else if (played == 0) {
+            result.text += std::to_string(moveNumber) + "... ";
+        }
+        result.text += scratch.history().back().san + " ";
+        if (!white) ++moveNumber;
+        white = !white;
+        pos = end + 1;
+    }
+    if (scratch.history().empty()) return result;
+    result.first = scratch.history().front().move;
+    result.valid = true;
+    return result;
+}
+
 core::GameRecord emptyRecord(std::string_view fen = core::kStartFen) { return core::GameRecord{{}, core::GameTree(fen)}; }
 
 }  // namespace
 
 AnalysisScreen::AnalysisScreen(app::Settings& settings, app::Assets& assets, const core::OpeningBook* book)
-    : settings_(settings), assets_(assets), book_(book), record_(emptyRecord()) {
+    : settings_(settings), assets_(assets), book_(book), record_(emptyRecord()), compare_(settings) {
     position_.setEnforceDraws(false);
     treeView_.quality = [this](core::NodeId id) { return qualityOf(id); };
     treeView_.emptyHint = "Move a piece on the board to start a line, or paste a FEN or PGN.";
@@ -83,21 +119,7 @@ void AnalysisScreen::configureEngine() {
     searchNode_ = kNoNode;
     appliedMultiPv_ = 0;
 
-    if (const auto threads = engine_.option("Threads")) {
-        int wanted = settings_.analysisThreads;
-        if (wanted <= 0) wanted = std::clamp(static_cast<int>(std::thread::hardware_concurrency()) / 2, 1, 8);
-        wanted = std::clamp(wanted, threads->min.value_or(1), threads->max.value_or(wanted));
-        engine_.setOption("Threads", std::to_string(wanted));
-    }
-    if (const auto hash = engine_.option("Hash")) {
-        const int wanted = std::clamp(settings_.analysisHashMb, hash->min.value_or(1), hash->max.value_or(settings_.analysisHashMb));
-        engine_.setOption("Hash", std::to_string(wanted));
-    }
-    if (engine_.option("UCI_LimitStrength")) engine_.setOption("UCI_LimitStrength", "false");
-    if (const auto skill = engine_.option("Skill Level"); skill && skill->max) {
-        engine_.setOption("Skill Level", std::to_string(*skill->max));
-    }
-    engine_.newGame();
+    app::configureForAnalysis(engine_, settings_);
 }
 
 void AnalysisScreen::update(bool visible) {
@@ -135,6 +157,19 @@ void AnalysisScreen::update(bool visible) {
         startBatch();
     }
     syncSearch(visible);
+
+    // The comparison engine follows the board while live analysis is on.
+    if (comparePath_ != settings_.compareEnginePath || compareOptions_ != settings_.compareEngineOptions) {
+        comparePath_ = settings_.compareEnginePath;
+        compareOptions_ = settings_.compareEngineOptions;
+        compare_.restart();
+    }
+    if (visible && engineEnabled_ && settings_.compareEngines && batchQueue_.empty() && !position_.isOver()) {
+        compare_.analyse(record_.tree.startFen(), record_.tree.uciMoves(current_), sideToMoveAt(current_) == Color::White);
+    } else {
+        compare_.rest();
+    }
+    compare_.update();
 }
 
 void AnalysisScreen::syncSearch(bool visible) {
@@ -182,6 +217,7 @@ void AnalysisScreen::syncSearch(bool visible) {
     lines_ = {};
     depth_ = 0;
     nodesPerSecond_ = 0;
+    tablebaseHits_ = 0;
     searchNode_ = current_;
     searchIsBatch_ = false;
     searchId_ = engine_.search(tree.startFen(), tree.uciMoves(current_), engine::SearchLimits{});
@@ -192,15 +228,7 @@ void AnalysisScreen::handleInfo(const engine::SearchInfo& info) {
     if (!info.scoreCp && !info.mateIn) return;
 
     const bool whiteToMove = sideToMoveAt(searchNode_) == Color::White;
-    core::Eval eval;
-    eval.depth = info.depth;
-    if (info.mateIn) {
-        eval.mate = whiteToMove ? *info.mateIn : -*info.mateIn;
-        // "Mate in 0": the side to move has been mated.
-        if (*info.mateIn == 0) eval.cp = whiteToMove ? -1 : 1;
-    } else {
-        eval.cp = whiteToMove ? *info.scoreCp : -*info.scoreCp;
-    }
+    const core::Eval eval = app::evalFromInfo(info, whiteToMove);
 
     if (info.multiPv == 1) {
         const std::optional<core::Eval>& known = record_.tree.node(searchNode_).eval;
@@ -215,36 +243,17 @@ void AnalysisScreen::handleInfo(const engine::SearchInfo& info) {
 
     depth_ = std::max(depth_, info.depth);
     if (info.nodesPerSecond > 0) nodesPerSecond_ = info.nodesPerSecond;
+    tablebaseHits_ = std::max(tablebaseHits_, info.tbHits);
     if (info.multiPv < 1 || info.multiPv > static_cast<int>(lines_.size()) || info.pv.empty()) return;
 
-    // Turn the engine's line into SAN by playing it out on a scratch board.
-    core::Game scratch;
-    scratch.setEnforceDraws(false);
-    if (!scratch.reset(record_.tree.node(searchNode_).fen)) return;
-    std::string san;
-    int moveNumber = scratch.fullMoveNumber();
-    bool white = scratch.sideToMove() == Color::White;
-    std::size_t pos = 0;
-    for (int played = 0; played < kPvMoves && pos < info.pv.size(); ++played) {
-        const std::size_t end = std::min(info.pv.find(' ', pos), info.pv.size());
-        if (!scratch.makeUciMove(std::string_view(info.pv).substr(pos, end - pos))) break;
-        if (white) {
-            san += std::to_string(moveNumber) + ". ";
-        } else if (played == 0) {
-            san += std::to_string(moveNumber) + "... ";
-        }
-        san += scratch.history().back().san + " ";
-        if (!white) ++moveNumber;
-        white = !white;
-        pos = end + 1;
-    }
-    if (scratch.history().empty()) return;
+    const SanLine san = sanLine(record_.tree.node(searchNode_).fen, info.pv);
+    if (!san.valid) return;
 
     Line& line = lines_[static_cast<std::size_t>(info.multiPv - 1)];
     line.depth = info.depth;
     line.eval = eval;
-    line.san = std::move(san);
-    line.firstMove = scratch.history().front().move;
+    line.san = san.text;
+    line.firstMove = san.first;
     line.valid = true;
 }
 
@@ -496,6 +505,7 @@ void AnalysisScreen::draw() {
     BoardOptions options = boardOptionsFrom(settings_);
     options.flipped = flipped_;
     options.interactive = true;
+    options.tints = overlayTints();
     const bool liveLines = searchNode_ == current_ && !searchIsBatch_;
     if (settings_.showBestMoveArrow && engineEnabled_ && liveLines && lines_[0].valid) {
         options.arrows.push_back(BoardArrow{lines_[0].firstMove.from, lines_[0].firstMove.to, kEngineArrowColor});
@@ -539,7 +549,7 @@ void AnalysisScreen::draw() {
 
     const float rowHeight = ImGui::GetFrameHeightWithSpacing();
     const float noticeHeight = notice_.empty() ? 0.0f : ImGui::GetTextLineHeightWithSpacing() * 2.0f;
-    const float below = rowHeight * 4.0f + noticeHeight + style.ItemSpacing.y;
+    const float below = rowHeight * 5.0f + noticeHeight + style.ItemSpacing.y;
     {
         const MoveTreeActions actions = treeView_.draw(record_.tree, current_, std::max(ImGui::GetContentRegionAvail().y - below, 80.0f));
         if (actions.clicked != kNoNode) goTo(actions.clicked);
@@ -639,104 +649,96 @@ void AnalysisScreen::drawEnginePanel() {
         }
         ImGui::PopID();
     }
+    // What the endgame tablebases say, when the engine has them and the position is small enough.
+    if (live && lines_[0].valid && tablebaseHits_ > 0 && !settings_.syzygyPath.empty() &&
+        core::Position(position_.fen()).pieceCount() <= 7) {
+        const core::Eval& eval = lines_[0].eval;
+        const bool decided = eval.mate.has_value() || std::abs(eval.cp) >= kTablebaseScore;
+        if (decided) {
+            ImGui::TextDisabled("Tablebase: %s", eval.whiteIsAhead() ? "White wins" : "Black wins");
+        } else if (eval.cp == 0) {
+            ImGui::TextDisabled("Tablebase: draw");
+        }
+    }
+    drawComparison();
     if (clicked) playMove(*clicked);
 }
 
-void AnalysisScreen::drawEvalGraph(ImVec2 size) {
-    const core::GameTree& tree = record_.tree;
-    const ImVec2 origin = ImGui::GetCursorScreenPos();
-    ImGui::InvisibleButton("##graph", size);
-    const bool hovered = ImGui::IsItemHovered();
-    const bool clicked = ImGui::IsItemClicked();
-
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const ImVec2 end(origin.x + size.x, origin.y + size.y);
-    drawList->AddRectFilled(origin, end, IM_COL32(48, 46, 43, 255), 4.0f);
-
-    std::vector<NodeId> nodes{kRootNode};
-    const std::vector<NodeId> mainLine = tree.mainLine();
-    nodes.insert(nodes.end(), mainLine.begin(), mainLine.end());
-
-    const float middle = origin.y + size.y * 0.5f;
-    if (nodes.size() < 2) {
-        const char* hint = "The evaluation graph appears here once a game has moves.";
-        const ImVec2 textSize = ImGui::CalcTextSize(hint);
-        if (textSize.x < size.x)
-            drawList->AddText(ImVec2(origin.x + (size.x - textSize.x) * 0.5f, middle - textSize.y * 0.5f),
-                          ImGui::GetColorU32(ImGuiCol_TextDisabled), hint);
+// One row for the second engine: its evaluation, depth and line, and whether it wants
+// the same move as the main engine.
+void AnalysisScreen::drawComparison() {
+    if (!compare_.configured()) return;
+    if (ImGui::Checkbox("##compare-on", &settings_.compareEngines)) settingsChanged_ = true;
+    ImGui::SetItemTooltip("Show what the comparison engine thinks of this position");
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    std::string name = compare_.name();
+    if (name.empty()) name = "Comparison engine";
+    if (!compare_.error().empty()) {
+        ImGui::TextColored(kErrorColor, "%s", compare_.error().c_str());
         return;
     }
+    const app::ComparisonEngine::Result& result = compare_.result();
+    const SanLine san = result.valid ? sanLine(position_.fen(), result.pv) : SanLine{};
+    if (!settings_.compareEngines || !engineEnabled_ || !san.valid) {
+        ImGui::TextDisabled("%s%s", name.c_str(), settings_.compareEngines && engineEnabled_ && !position_.isOver() ? "  ..." : "");
+        return;
+    }
+    std::string label = name + "  " + formatEval(result.eval) + "  depth " + std::to_string(result.depth);
+    const bool live = searchNode_ == current_ && !searchIsBatch_ && lines_[0].valid;
+    if (live) label += san.first == lines_[0].firstMove ? "  \xC2\xB7  same move" : "  \xC2\xB7  other move";
+    ImGui::TextDisabled("%s", label.c_str());
+    if (ImGui::Selectable((san.text + "##compare-line").c_str(), false)) playMove(san.first);
+    ImGui::SetItemTooltip("Play the first move of this line");
+}
 
-    const std::size_t count = nodes.size();
-    const auto xAt = [&](std::size_t i) {
-        return origin.x + size.x * static_cast<float>(i) / static_cast<float>(count - 1);
-    };
-    std::vector<std::optional<float>> share(count);  // White's expected score, 0..1
-    int known = 0;
-    for (std::size_t i = 0; i < count; ++i) {
-        if (const std::optional<core::Eval>& eval = tree.node(nodes[i]).eval) {
-            share[i] = static_cast<float>(eval->whiteWinPercent() / 100.0);
-            ++known;
+const std::vector<SquareTint>& AnalysisScreen::overlayTints() {
+    const std::string key = std::to_string(overlay_) + position_.fen();
+    if (key == overlayKey_) return overlayTints_;
+    overlayKey_ = key;
+    overlayTints_.clear();
+    if (overlay_ == 0) return overlayTints_;
+
+    const core::Position position(position_.fen());
+    if (overlay_ == 1) {
+        // Square control: who attacks each square more often. Blue for White, red for Black.
+        for (core::Square square = 0; square < 64; ++square) {
+            const int white = position.attackerCount(square, Color::White);
+            const int black = position.attackerCount(square, Color::Black);
+            if (white == 0 && black == 0) continue;
+            const int difference = white - black;
+            if (difference == 0) {
+                overlayTints_.push_back(SquareTint{square, IM_COL32(120, 120, 120, 70)});
+                continue;
+            }
+            const int alpha = std::min(60 + 40 * std::abs(difference), 190);
+            overlayTints_.push_back(SquareTint{square, difference > 0 ? IM_COL32(40, 110, 220, alpha) : IM_COL32(215, 55, 45, alpha)});
+        }
+    } else if (overlay_ == 2) {
+        // Pieces that can be won: attacked by something cheaper, or attacked and not defended.
+        for (const Color color : {Color::White, Color::Black}) {
+            for (const core::Square square : position.hangingPieces(color)) {
+                overlayTints_.push_back(SquareTint{square, IM_COL32(220, 40, 40, 170)});
+            }
+        }
+    } else {
+        // Piece activity: from red (no moves) over yellow to green (eight or more).
+        for (core::Square square = 0; square < 64; ++square) {
+            const core::Piece piece = position.at(square);
+            if (piece.empty() || piece.type == core::PieceType::Pawn || piece.type == core::PieceType::King) continue;
+            const float activity = std::min(static_cast<float>(position.mobility(square)) / 8.0f, 1.0f);
+            const int red = activity < 0.5f ? 220 : static_cast<int>(220.0f * (1.0f - activity) * 2.0f);
+            const int green = activity < 0.5f ? static_cast<int>(190.0f * activity * 2.0f) : 190;
+            overlayTints_.push_back(SquareTint{square, IM_COL32(red, green, 40, 165)});
         }
     }
-    const auto yAt = [&](float value) { return origin.y + size.y * (1.0f - value); };
+    return overlayTints_;
+}
 
-    // White's share is the light area rising from the bottom. Anti-aliasing is off
-    // for the fill so neighbouring segments join without visible seams.
-    const ImDrawListFlags savedFlags = drawList->Flags;
-    drawList->Flags &= ~ImDrawListFlags_AntiAliasedFill;
-    for (std::size_t i = 0; i + 1 < count; ++i) {
-        if (!share[i] || !share[i + 1]) continue;
-        const ImVec2 a(std::floor(xAt(i)), yAt(*share[i]));
-        const ImVec2 b(std::floor(xAt(i + 1)), yAt(*share[i + 1]));
-        drawList->AddQuadFilled(a, b, ImVec2(b.x, end.y), ImVec2(a.x, end.y), IM_COL32(225, 225, 220, 255));
-    }
-    drawList->Flags = savedFlags;
-    drawList->AddLine(ImVec2(origin.x, middle), ImVec2(end.x, middle), IM_COL32(200, 80, 60, 150), 1.0f);
-
-    // Mark moves that threw away a large part of the mover's expected score.
-    for (std::size_t i = 1; i < count; ++i) {
-        if (!share[i]) continue;
-        const core::MoveQuality quality = qualityOf(nodes[i]);
-        if (quality != core::MoveQuality::Inaccuracy && quality != core::MoveQuality::Mistake &&
-            quality != core::MoveQuality::Blunder) {
-            continue;
-        }
-        const ImVec2 point(xAt(i), yAt(*share[i]));
-        drawList->AddCircleFilled(point, 4.5f, IM_COL32(0, 0, 0, 110));
-        drawList->AddCircleFilled(point, 3.5f, qualityColor(quality));
-    }
-
-    if (known < 2) {
-        const char* hint = "Not analysed yet. Use \"Analyse\" to fill the graph.";
-        const ImVec2 textSize = ImGui::CalcTextSize(hint);
-        if (textSize.x < size.x)
-            drawList->AddText(ImVec2(origin.x + (size.x - textSize.x) * 0.5f, origin.y + 6.0f),
-                          ImGui::GetColorU32(ImGuiCol_TextDisabled), hint);
-    }
-
-    const auto found = std::find(nodes.begin(), nodes.end(), current_);
-    if (found != nodes.end()) {
-        const float x = xAt(static_cast<std::size_t>(found - nodes.begin()));
-        drawList->AddLine(ImVec2(x, origin.y), ImVec2(x, end.y), ImGui::ColorConvertFloat4ToU32(kAccentColor), 2.0f);
-    }
-
-    if (hovered) {
-        const float relative = std::clamp((ImGui::GetIO().MousePos.x - origin.x) / size.x, 0.0f, 1.0f);
-        const std::size_t index = static_cast<std::size_t>(std::lround(relative * static_cast<float>(count - 1)));
-        const NodeId id = nodes[index];
-        const float x = xAt(index);
-        drawList->AddLine(ImVec2(x, origin.y), ImVec2(x, end.y), IM_COL32(255, 255, 255, 70), 1.0f);
-
-        std::string text = "Start position";
-        if (id != kRootNode) {
-            text = std::to_string(tree.moveNumber(id)) + (tree.mover(id) == Color::White ? ". " : "... ") +
-                   tree.node(id).record.san;
-        }
-        if (const std::optional<core::Eval>& eval = tree.node(id).eval) text += "   " + formatEval(*eval);
-        ImGui::SetTooltip("%s", text.c_str());
-        if (clicked) goTo(id);
-    }
+void AnalysisScreen::drawEvalGraph(ImVec2 size) {
+    const NodeId clicked = ui::drawEvalGraph(record_.tree, current_, size, [this](NodeId id) { return qualityOf(id); },
+                                             "Not analysed yet. Use \"Analyse\" to fill the graph.");
+    if (clicked != kNoNode) goTo(clicked);
 }
 
 void AnalysisScreen::drawButtons() {
@@ -749,6 +751,13 @@ void AnalysisScreen::drawButtons() {
 
     const bool atStart = current_ == kRootNode;
     const bool atEnd = tree.node(current_).children.empty();
+
+    ImGui::SetNextItemWidth(full);
+    ImGui::Combo("##overlay", &overlay_,
+                 "Board overlay: none\0Board overlay: square control\0Board overlay: pieces that can be won\0"
+                 "Board overlay: piece activity\0");
+    ImGui::SetItemTooltip("Colour the squares: who controls them (blue White, red Black), which pieces can be won,\n"
+                          "or how many moves each piece has (red none, green many)");
 
     ImGui::BeginDisabled(atStart);
     if (ImGui::Button("|<", width(5))) goTo(kRootNode);

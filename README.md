@@ -1,12 +1,13 @@
 # Chess - A simple, no clutter chess engine to practice
 
 A native, offline chess desktop application: play against Stockfish, analyse games, train
-with puzzles, opening repertoires and endgames, and keep a personal game library. Full game review is planned
-(see `PRIMER.txt` for the feature list and phases).
+with puzzles, opening repertoires and endgames, review your games with the engine and keep a
+personal game library (see `PRIMER.txt` for the feature list and phases).
 
 ## Status
 
-Phases 1 (core application), 2 (analysis) and 3 (training) are implemented.
+All five phases are implemented: core application, analysis, training, game review and the
+advanced features.
 
 Play:
 
@@ -18,7 +19,11 @@ Play:
 - Play against Stockfish as White or Black, at 8 levels or a chosen Elo, with a time and
   depth limit per move, from the start position or any FEN. The engine runs as a separate
   process and never blocks the window.
-- Settings (engine, board colours, hints, sound) saved to `%APPDATA%\ChessDesktop\settings.ini`.
+- Blindfold mode: the pieces are hidden and you play from the move list (B switches it,
+  holding Space peeks). It also works in Puzzles.
+- Fullscreen with F11 or in Settings.
+- Settings (engine, dark or light mode, board colours, hints, sound) saved to
+  `%APPDATA%\ChessDesktop\settings.ini`.
 
 Analysis:
 
@@ -32,6 +37,17 @@ Analysis:
 - FEN and PGN: paste either from the clipboard (Ctrl+V), copy them, open and save PGN
   files. Variations, comments, annotation glyphs and `[%eval]` values are read and written.
 - Right-drag on the board draws arrows, right-click marks squares.
+- Board overlays: square control (blue where White attacks a square more often, red for
+  Black), pieces that can be won, and piece activity (red for pieces without moves, green
+  for active ones).
+- Engine comparison: set a second UCI engine in Settings and Analysis shows its evaluation,
+  depth and line under the main engine's, and whether the two want the same move. Each
+  engine takes its own list of UCI options (`Name=Value; Name=Value`).
+- Endgame tablebases: point Settings at a folder of Syzygy files and the engine uses them in
+  Play, Analysis and Game Review. In positions they cover, Analysis shows the exact result
+  ("Tablebase: White wins" or "draw") and the engine's moves are the tablebase moves. Mate
+  distances come from the engine's search; Syzygy tables do not store them. The files are not
+  bundled; see <https://tablebase.lichess.ovh/tables/standard/>.
 
 Game Library:
 
@@ -64,6 +80,35 @@ Endgames:
 - 16 training positions (basic mates, king and pawn, opposition, rook and queen endings),
   each checked with Stockfish, played against the engine at full strength with a stated
   goal (win or hold the draw). Progress is kept per position.
+
+Game Review:
+
+- Pick a game from the library (or press "Review game" after a game in Play, or "Review" in
+  the Game Library) and the engine checks every move in the background.
+- Accuracy for both players, every move classified as best, excellent, good, inaccuracy,
+  mistake or blunder, and a list of key moments (mistakes, blunders, missed wins, missed
+  mates). Up and Down jump between them.
+- On a weak move the board shows the move played and the move the engine preferred as
+  arrows, with a line of text saying how much it cost.
+- Each move comes with a short explanation built from what is on the board: what the move
+  attacks or wins, what a weak move allows, and why the engine's move was stronger. The
+  "Position" tab lists loose pieces, pawn weaknesses, passed pawns and king cover for both
+  sides. These are rule-based descriptions, not deep plans.
+- "Puzzles" turns the moments where a mistake could be punished into puzzles. The engine
+  keeps a move only while it is clearly better than every alternative, so each solution is
+  verified and unambiguous. Puzzles get a difficulty estimate and themes and appear in
+  Puzzles under the theme "From my games".
+- "Review all new games" works through every library game without a review.
+- Reviews are stored with the game (evaluations and engine moves go into its PGN as
+  `[%eval]` and `[%best]` comments), so opening it again needs no engine.
+
+Statistics:
+
+- Built from the reviewed games you played: results, average accuracy overall and per
+  colour, accuracy game by game, accuracy per game phase with the weakest one pointed out,
+  how often each kind of move occurs, and results and accuracy per opening.
+- Your side is found by name. Games played here use "You"; add the names you use elsewhere
+  (comma separated) at the bottom of the Statistics section to include imported games.
 
 ## Building
 
@@ -121,13 +166,14 @@ Settings.
 
 | Path | Contents |
 | --- | --- |
-| `src/chess` | Rules, move history, FEN, the game tree, PGN, move classification, puzzle and repertoire logic, endgame positions. No UI or engine dependencies. |
+| `src/chess` | Rules, move history, FEN, the game tree, PGN, move classification, game review and statistics, position facts (attacks, loose pieces, pawn structure), move explanations, puzzle solving and building, repertoire logic, endgame positions. No UI or engine dependencies. |
 | `src/platform` | Operating system layer: child processes, user folders, file dialogs, shared libraries. Windows and macOS/Linux implementations. |
 | `src/engine` | The asynchronous UCI client. |
-| `src/storage` | SQLite stores: games, puzzles and attempts, repertoires and training progress. |
-| `src/app` | Window, main loop, settings, assets, Discord presence. |
+| `src/storage` | SQLite stores: games, game reviews, puzzles and attempts, repertoires and training progress. |
+| `src/app` | Window, main loop, settings, theme, assets, background game analysis, puzzle generation, the comparison engine, Discord presence. |
 | `src/ui` | Board view, move tree view and one screen per section. |
-| `tests` | Unit tests for the rules, PGN, move classification, puzzles, spaced repetition, the opening book, the UCI parser and the stores. |
+| `tests` | Unit tests for the rules, PGN, move classification, game review, statistics, puzzles, spaced repetition, the opening book, the UCI parser and the stores. |
+| `tools` | `ucicheck` (engine check) and `make_badges.py`, which draws the move-quality badges in `data/badges` (needs Python with Pillow; only to regenerate them). |
 | `third_party/chess` | [chess-library](https://github.com/Disservin/chess-library) by Disservin (MIT). |
 | `data` | Piece set, font, sounds, opening names and starter puzzles. The opening tables and puzzles come from [Lichess](https://database.lichess.org) (CC0). The cburnett pieces (by Colin M.L. Burnett, GPLv2+) come from the [lichess](https://github.com/lichess-org/lila) repository and are rasterized from SVG at startup. |
 
@@ -135,10 +181,12 @@ Settings.
 
 | Key | Action |
 | --- | --- |
-| Left / Right | Play: undo / redo. Analysis: previous / next move |
-| Up / Down | Analysis: switch between variations |
-| Home / End | Analysis: start / end of the line |
+| Left / Right | Play: undo / redo. Analysis and Game Review: previous / next move |
+| Up / Down | Analysis: switch between variations. Game Review: previous / next key moment |
+| Home / End | Analysis and Game Review: start / end of the line |
 | Ctrl+V | Analysis: paste a FEN or PGN |
 | F | Flip the board |
+| F11 | Fullscreen on / off |
+| B / hold Space | Play and Puzzles: blindfold on / off, peek at the pieces |
 | Ctrl+N | New game |
 | Right click / right drag | Mark a square / draw an arrow (a left click clears them) |

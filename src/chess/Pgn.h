@@ -10,7 +10,7 @@
 namespace core {
 
 // Parses the first game found in `text`: tags, moves, nested variations, comments,
-// annotation glyphs and "[%eval ...]" evaluations.
+// annotation glyphs, "[%eval ...]" evaluations and "[%best ...]" engine moves.
 // Returns nullopt and fills `error` when the text holds no game or an illegal move.
 std::optional<GameRecord> parsePgn(std::string_view text, std::string* error = nullptr);
 

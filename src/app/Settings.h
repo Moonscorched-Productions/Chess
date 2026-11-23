@@ -30,6 +30,13 @@ const LevelPreset& levelPreset(int level);
 struct Settings {
     // Engine
     std::string enginePath;  // empty = use the bundled engine from the engines/ folder
+    // Extra UCI options for the engine, "Name=Value; Name=Value". Applied after the app's own.
+    std::string engineOptions;
+    std::string syzygyPath;  // folder with Syzygy endgame tablebases; empty = none
+    // A second engine for comparison in Analysis, with its own option list.
+    std::string compareEnginePath;
+    std::string compareEngineOptions;
+    bool compareEngines = true;  // show the comparison engine's line when one is set
     StrengthMode strengthMode = StrengthMode::Level;
     int level = 3;           // 1..8
     int elo = 1500;          // used with StrengthMode::Elo
@@ -45,6 +52,13 @@ struct Settings {
     bool showBestMoveArrow = true;
     bool saveGamesToLibrary = true;  // store finished games from Play in the library
     bool discordPresence = true;     // show what you are doing in Discord (when it is running)
+    // Names (comma separated) under which the user appears in game files; "You" is used by Play.
+    std::string playerNames = "You";
+
+    // Appearance
+    bool lightMode = false;
+    bool fullscreen = false;
+    bool blindfold = false;  // hide the pieces in Play and Puzzles
 
     // New game defaults
     ColorChoice playAs = ColorChoice::White;

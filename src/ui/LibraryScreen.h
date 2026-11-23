@@ -38,10 +38,14 @@ public:
 
     // The game the user asked to open in Analysis, if any (cleared by the call).
     std::optional<OpenRequest> takeOpenRequest();
+    // The game the user asked to review, if any (cleared by the call).
+    std::optional<OpenRequest> takeReviewRequest();
+    // True once after games were imported or deleted here.
+    bool consumeChanged();
 
 private:
     void reload();
-    void openGame(storage::GameId id);
+    void openGame(storage::GameId id, bool review = false);
     void startImport(const std::filesystem::path& file);
     void finishImport();
     void exportGames(const std::vector<storage::GameId>& ids);
@@ -59,6 +63,8 @@ private:
     std::string notice_;
     bool wantDeleteDialog_ = false;
     std::optional<OpenRequest> openRequest_;
+    std::optional<OpenRequest> reviewRequest_;
+    bool changed_ = false;
 
     // Background import.
     std::thread importThread_;

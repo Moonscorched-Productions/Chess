@@ -25,6 +25,20 @@ void row(const char* label) {
     ImGui::SetNextItemWidth(kFieldWidth);
 }
 
+void fill(std::array<char, 512>& buffer, const std::string& text) {
+    const std::size_t length = std::min(text.size(), buffer.size() - 1);
+    std::memcpy(buffer.data(), text.data(), length);
+    buffer[length] = '\0';
+}
+
+// A text field bound to a string setting. Returns true when an edit was committed.
+bool textField(const char* id, const char* hint, std::array<char, 512>& buffer, std::string& target) {
+    ImGui::InputTextWithHint(id, hint, buffer.data(), buffer.size());
+    if (!ImGui::IsItemDeactivatedAfterEdit() || target == buffer.data()) return false;
+    target = buffer.data();
+    return true;
+}
+
 }  // namespace
 
 SettingsScreen::SettingsScreen(app::Settings& settings, const app::RichPresence& presence)
@@ -33,6 +47,10 @@ SettingsScreen::SettingsScreen(app::Settings& settings, const app::RichPresence&
     std::memcpy(enginePath_.data(), settings_.enginePath.data(), length);
     enginePath_[length] = '\0';
     detectedEngine_ = app::pathToUtf8(app::findBundledEngine());
+    fill(engineOptions_, settings_.engineOptions);
+    fill(syzygyPath_, settings_.syzygyPath);
+    fill(comparePath_, settings_.compareEnginePath);
+    fill(compareOptions_, settings_.compareEngineOptions);
 }
 
 SettingsScreen::Changes SettingsScreen::draw() {
@@ -62,6 +80,14 @@ SettingsScreen::Changes SettingsScreen::draw() {
             ImGui::PopTextWrapPos();
         }
     }
+
+    row("Engine options");
+    changes.any |= textField("##engineoptions", "Optional, e.g. Move Overhead=50; Ponder=false", engineOptions_, s.engineOptions);
+    ImGui::SetItemTooltip("Extra UCI options for the engine, written as Name=Value and separated by semicolons");
+    row("Endgame tablebases");
+    changes.any |= textField("##syzygy", "Folder with Syzygy tablebase files (optional)", syzygyPath_, s.syzygyPath);
+    ImGui::SetItemTooltip("With tablebases the engine knows the exact result of positions with few pieces.\n"
+                          "Analysis then shows it as \"Tablebase: White wins\", \"draw\" and so on.");
 
     row("Strength");
     int mode = s.strengthMode == app::StrengthMode::Elo ? 1 : 0;
@@ -114,6 +140,11 @@ SettingsScreen::Changes SettingsScreen::draw() {
     }
     row("Best move arrow");
     changes.any |= ImGui::Checkbox("##arrow", &s.showBestMoveArrow);
+    row("Comparison engine");
+    changes.any |= textField("##comparepath", "Path to a second UCI engine (optional)", comparePath_, s.compareEnginePath);
+    ImGui::SetItemTooltip("Analysis shows this engine's evaluation and line next to the main engine's");
+    row("Its options");
+    changes.any |= textField("##compareoptions", "Optional, e.g. Threads=1; Hash=64", compareOptions_, s.compareEngineOptions);
 
     // --- Library --------------------------------------------------------------
     ImGui::Spacing();
@@ -134,6 +165,20 @@ SettingsScreen::Changes SettingsScreen::draw() {
                                      : presence_.connected() ? "Connected to Discord."
                                                              : "Waiting for Discord to be running.")
                                   : "This build does not include the Discord Game SDK.");
+
+    // --- Appearance -----------------------------------------------------------
+    ImGui::Spacing();
+    ImGui::SeparatorText("Appearance");
+    row("Light mode");
+    changes.any |= ImGui::Checkbox("##lightmode", &s.lightMode);
+    row("Fullscreen");
+    changes.any |= ImGui::Checkbox("##fullscreen", &s.fullscreen);
+    ImGui::SameLine();
+    ImGui::TextDisabled("F11 switches at any time.");
+    row("Blindfold");
+    changes.any |= ImGui::Checkbox("##blindfold", &s.blindfold);
+    ImGui::SameLine();
+    ImGui::TextDisabled("Hides the pieces in Play and Puzzles. B switches, holding Space peeks.");
 
     // --- Board ----------------------------------------------------------------
     ImGui::Spacing();

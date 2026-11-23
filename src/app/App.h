@@ -16,6 +16,7 @@
 namespace storage {
 class GameStore;
 class PuzzleStore;
+class ReviewStore;
 class TrainingStore;
 }
 
@@ -26,6 +27,8 @@ class OpeningsScreen;
 class EndgameScreen;
 class PlayScreen;
 class PuzzleScreen;
+class ReviewScreen;
+class StatisticsScreen;
 class SettingsScreen;
 }  // namespace ui
 
@@ -47,6 +50,18 @@ struct Options {
     bool openPuzzles = false;        // --puzzles: start on the Puzzles section
     bool openOpenings = false;       // --openings: start on the Openings section
     bool openEndgames = false;       // --endgames: start on the Endgames section
+    bool openReview = false;         // --review: start on Game Review (and review the --pgn game, if given)
+    bool reviewAll = false;          // --review-all: review every library game without a review
+    bool openStatistics = false;     // --statistics: start on the Statistics section
+    std::string playerNames;         // --player <names>: the user's names in game files
+    bool lightMode = false;          // --light: use the light colour scheme
+    bool fullscreen = false;         // --fullscreen: start in fullscreen
+    bool blindfold = false;          // --blindfold: hide the pieces in Play and Puzzles
+    bool makePuzzles = false;        // --make-puzzles: make puzzles from the reviewed --pgn game
+    int overlay = 0;                 // --overlay <n>: board overlay in Analysis (1 control, 2 loose pieces, 3 activity)
+    std::string fen;                 // --fen <fen>: load this position into Analysis
+    std::string compareEngine;       // --compare <path>: comparison engine for Analysis
+    std::string syzygyPath;          // --syzygy <folder>: Syzygy tablebase folder
     bool trainOpenings = false;      // --train: start an opening training session that answers itself
     std::string endgameId;           // --endgame <id>: start this endgame training position
     std::string repertoireFile;      // --repertoire <pgn>: create a White repertoire from this file
@@ -79,6 +94,8 @@ private:
     void saveSettings();
     void routeRequests();
     void updatePresence();
+    void applyAppearance();
+    void applyWindowMode();
     bool saveScreenshot();
 
     Options options_;
@@ -97,6 +114,7 @@ private:
 
     std::unique_ptr<storage::GameStore> store_;
     std::unique_ptr<storage::PuzzleStore> puzzleStore_;
+    std::unique_ptr<storage::ReviewStore> reviewStore_;
     std::unique_ptr<storage::TrainingStore> trainingStore_;
     core::OpeningBook openingBook_;
     std::unique_ptr<ui::PlayScreen> play_;
@@ -105,7 +123,12 @@ private:
     std::unique_ptr<ui::PuzzleScreen> puzzles_;
     std::unique_ptr<ui::OpeningsScreen> openings_;
     std::unique_ptr<ui::EndgameScreen> endgames_;
+    std::unique_ptr<ui::ReviewScreen> review_;
+    std::unique_ptr<ui::StatisticsScreen> statistics_;
     std::unique_ptr<ui::SettingsScreen> settingsScreen_;
+    bool appliedLightMode_ = false;
+    bool appliedFullscreen_ = false;
+    sf::Vector2u windowedSize_{1280u, 800u};
     Section section_ = Section::Play;
 };
 

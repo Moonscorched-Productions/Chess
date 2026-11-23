@@ -90,6 +90,20 @@ std::optional<Eval> extractEval(std::string& comment) {
     return eval;
 }
 
+// Pulls a "[%best e2e4]" command (the engine's preferred move in the position) out of a comment.
+std::string extractBestMove(std::string& comment) {
+    const std::size_t start = comment.find("[%best ");
+    if (start == std::string::npos) return {};
+    const std::size_t end = comment.find(']', start);
+    if (end == std::string::npos) return {};
+    const std::string move(trim(std::string_view(comment).substr(start + 7, end - start - 7)));
+    comment.erase(start, end - start + 1);
+    comment = normalizeSpaces(comment);
+    const bool plausible = (move.size() == 4 || move.size() == 5) &&
+                           std::all_of(move.begin(), move.end(), [](unsigned char c) { return std::isalnum(c) != 0; });
+    return plausible ? move : std::string();
+}
+
 std::string formatEval(const Eval& eval) {
     char buffer[48];
     if (eval.mate) {
@@ -189,6 +203,7 @@ private:
     void addComment(GameRecord& record, NodeId node, std::string_view raw) {
         std::string comment = normalizeSpaces(raw);
         if (const std::optional<Eval> eval = extractEval(comment)) record.tree.setEval(node, eval);
+        if (std::string best = extractBestMove(comment); !best.empty()) record.tree.setBestMove(node, std::move(best));
         if (comment.empty()) return;
         const std::string& existing = record.tree.node(node).comment;
         record.tree.setComment(node, existing.empty() ? comment : existing + " " + comment);
@@ -320,6 +335,10 @@ private:
         std::string text;
         // A checkmate position needs no evaluation ("mate in 0" has no PGN form).
         if (node.eval && !(node.eval->mate && *node.eval->mate == 0)) text = formatEval(*node.eval);
+        if (!node.bestMove.empty()) {
+            if (!text.empty()) text += ' ';
+            text += "[%best " + node.bestMove + "]";
+        }
         if (!node.comment.empty()) {
             if (!text.empty()) text += ' ';
             for (const char c : node.comment) text += c == '}' ? ')' : c == '{' ? '(' : c;

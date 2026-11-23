@@ -16,9 +16,13 @@ namespace app {
 
 namespace {
 
-void loadFont() {
+ImFont* gHeadlineFont = nullptr;
+bool gFontsLoaded = false;
+
+void loadFonts() {
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
+    gHeadlineFont = nullptr;
     // The platform layer knows where this system keeps its interface fonts.
     const std::vector<std::filesystem::path> candidates = platform::uiFontCandidates();
     bool loaded = false;
@@ -27,20 +31,64 @@ void loadFont() {
         const std::string path = pathToUtf8(file);
         if (!std::filesystem::exists(file, ec)) continue;
         if (io.Fonts->AddFontFromFileTTF(path.c_str(), 18.0f) != nullptr) {
+            gHeadlineFont = io.Fonts->AddFontFromFileTTF(path.c_str(), 32.0f);
             loaded = true;
             break;
         }
     }
     if (!loaded) io.Fonts->AddFontDefault();
     (void)ImGui::SFML::UpdateFontTexture();
+    gFontsLoaded = true;
 }
+
+struct Palette {
+    ImVec4 background;
+    ImVec4 panel;
+    ImVec4 raised;
+    ImVec4 hover;
+    ImVec4 accent;
+    ImVec4 accentHover;
+    ImVec4 text;
+    ImVec4 textDisabled;
+    ImVec4 rowAlt;
+};
+
+constexpr Palette kDark = {
+    ImVec4(0.086f, 0.082f, 0.071f, 1.0f),  // #161512
+    ImVec4(0.149f, 0.141f, 0.129f, 1.0f),  // #262421
+    ImVec4(0.216f, 0.208f, 0.192f, 1.0f),
+    ImVec4(0.286f, 0.275f, 0.255f, 1.0f),
+    ImVec4(0.384f, 0.600f, 0.251f, 1.0f),  // green
+    ImVec4(0.447f, 0.682f, 0.298f, 1.0f),
+    ImVec4(0.80f, 0.80f, 0.78f, 1.0f),
+    ImVec4(0.50f, 0.50f, 0.48f, 1.0f),
+    ImVec4(1.0f, 1.0f, 1.0f, 0.03f),
+};
+
+constexpr Palette kLight = {
+    ImVec4(0.929f, 0.922f, 0.906f, 1.0f),  // #edebe7
+    ImVec4(1.000f, 1.000f, 1.000f, 1.0f),
+    ImVec4(0.878f, 0.871f, 0.851f, 1.0f),
+    ImVec4(0.812f, 0.804f, 0.780f, 1.0f),
+    ImVec4(0.439f, 0.647f, 0.298f, 1.0f),  // green
+    ImVec4(0.345f, 0.553f, 0.216f, 1.0f),
+    ImVec4(0.16f, 0.16f, 0.15f, 1.0f),
+    ImVec4(0.47f, 0.46f, 0.44f, 1.0f),
+    ImVec4(0.0f, 0.0f, 0.0f, 0.035f),
+};
 
 }  // namespace
 
-void applyTheme() {
-    loadFont();
+ImFont* headlineFont() { return gHeadlineFont != nullptr ? gHeadlineFont : ImGui::GetFont(); }
 
-    ImGui::StyleColorsDark();
+void applyTheme(bool light) {
+    if (!gFontsLoaded) loadFonts();
+
+    if (light) {
+        ImGui::StyleColorsLight();
+    } else {
+        ImGui::StyleColorsDark();
+    }
     ImGuiStyle& style = ImGui::GetStyle();
     style.WindowRounding = 0.0f;
     style.ChildRounding = 6.0f;
@@ -56,42 +104,42 @@ void applyTheme() {
     style.ItemSpacing = ImVec2(10.0f, 8.0f);
     style.ScrollbarSize = 12.0f;
 
-    const ImVec4 background(0.086f, 0.082f, 0.071f, 1.0f);  // #161512
-    const ImVec4 panel(0.149f, 0.141f, 0.129f, 1.0f);       // #262421
-    const ImVec4 raised(0.216f, 0.208f, 0.192f, 1.0f);
-    const ImVec4 hover(0.286f, 0.275f, 0.255f, 1.0f);
-    const ImVec4 accent(0.384f, 0.600f, 0.251f, 1.0f);  // green
-    const ImVec4 accentHover(0.447f, 0.682f, 0.298f, 1.0f);
-    const ImVec4 text(0.80f, 0.80f, 0.78f, 1.0f);
-
+    const Palette& p = light ? kLight : kDark;
     ImVec4* c = style.Colors;
-    c[ImGuiCol_Text] = text;
-    c[ImGuiCol_TextDisabled] = ImVec4(0.50f, 0.50f, 0.48f, 1.0f);
-    c[ImGuiCol_WindowBg] = background;
-    c[ImGuiCol_ChildBg] = panel;
-    c[ImGuiCol_PopupBg] = panel;
-    c[ImGuiCol_Border] = raised;
-    c[ImGuiCol_FrameBg] = raised;
-    c[ImGuiCol_FrameBgHovered] = hover;
-    c[ImGuiCol_FrameBgActive] = hover;
-    c[ImGuiCol_TitleBg] = panel;
-    c[ImGuiCol_TitleBgActive] = panel;
-    c[ImGuiCol_Button] = raised;
-    c[ImGuiCol_ButtonHovered] = hover;
-    c[ImGuiCol_ButtonActive] = accent;
-    c[ImGuiCol_Header] = raised;
-    c[ImGuiCol_HeaderHovered] = hover;
-    c[ImGuiCol_HeaderActive] = accent;
-    c[ImGuiCol_CheckMark] = accentHover;
-    c[ImGuiCol_SliderGrab] = accent;
-    c[ImGuiCol_SliderGrabActive] = accentHover;
-    c[ImGuiCol_Separator] = raised;
+    c[ImGuiCol_Text] = p.text;
+    c[ImGuiCol_TextDisabled] = p.textDisabled;
+    c[ImGuiCol_WindowBg] = p.background;
+    c[ImGuiCol_ChildBg] = p.panel;
+    c[ImGuiCol_PopupBg] = p.panel;
+    c[ImGuiCol_Border] = p.raised;
+    c[ImGuiCol_FrameBg] = p.raised;
+    c[ImGuiCol_FrameBgHovered] = p.hover;
+    c[ImGuiCol_FrameBgActive] = p.hover;
+    c[ImGuiCol_TitleBg] = p.panel;
+    c[ImGuiCol_TitleBgActive] = p.panel;
+    c[ImGuiCol_Button] = p.raised;
+    c[ImGuiCol_ButtonHovered] = p.hover;
+    c[ImGuiCol_ButtonActive] = p.accent;
+    c[ImGuiCol_Header] = p.raised;
+    c[ImGuiCol_HeaderHovered] = p.hover;
+    c[ImGuiCol_HeaderActive] = p.accent;
+    c[ImGuiCol_CheckMark] = p.accentHover;
+    c[ImGuiCol_SliderGrab] = p.accent;
+    c[ImGuiCol_SliderGrabActive] = p.accentHover;
+    c[ImGuiCol_Separator] = p.raised;
     c[ImGuiCol_ScrollbarBg] = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_ScrollbarGrab] = raised;
-    c[ImGuiCol_ScrollbarGrabHovered] = hover;
-    c[ImGuiCol_ScrollbarGrabActive] = hover;
-    c[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.6f);
-    c[ImGuiCol_TableRowBgAlt] = ImVec4(1.0f, 1.0f, 1.0f, 0.03f);
+    c[ImGuiCol_ScrollbarGrab] = p.raised;
+    c[ImGuiCol_ScrollbarGrabHovered] = p.hover;
+    c[ImGuiCol_ScrollbarGrabActive] = p.hover;
+    c[ImGuiCol_ModalWindowDimBg] = ImVec4(0.0f, 0.0f, 0.0f, light ? 0.35f : 0.6f);
+    c[ImGuiCol_TableRowBgAlt] = p.rowAlt;
+    c[ImGuiCol_TableHeaderBg] = p.raised;
+    c[ImGuiCol_TableBorderLight] = p.raised;
+    c[ImGuiCol_TableBorderStrong] = p.hover;
+    c[ImGuiCol_Tab] = p.raised;
+    c[ImGuiCol_TabHovered] = p.hover;
+    c[ImGuiCol_TabSelected] = p.accent;
+    c[ImGuiCol_PlotHistogram] = p.accent;
 }
 
 }  // namespace app

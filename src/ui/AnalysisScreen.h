@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "app/ComparisonEngine.h"
 #include "app/RichPresence.h"
 #include "app/Settings.h"
 #include "chess/Game.h"
@@ -57,6 +58,8 @@ public:
     void requestGameAnalysis() { wantBatch_ = true; }
     // Two short lines describing what is being analysed, for Discord Rich Presence.
     app::PresenceText presence() const;
+    // Test aid: chooses the board overlay (0 = none).
+    void setOverlay(int overlay) { overlay_ = overlay; }
     // Test aid: jumps to the given ply of the main line.
     void goToPly(int ply);
 
@@ -91,6 +94,9 @@ private:
 
     // Drawing.
     void drawEnginePanel();
+    void drawComparison();
+    // Square tints of the chosen board overlay for the current position.
+    const std::vector<SquareTint>& overlayTints();
     void drawEvalGraph(ImVec2 size);
     void drawButtons();
     void handleShortcuts();
@@ -118,6 +124,18 @@ private:
     std::array<Line, 5> lines_{};
     int depth_ = 0;
     std::uint64_t nodesPerSecond_ = 0;
+
+    std::uint64_t tablebaseHits_ = 0;  // reported by the live search
+
+    // A second engine on the same position, for comparison.
+    app::ComparisonEngine compare_;
+    std::string comparePath_;
+    std::string compareOptions_;
+
+    // Board overlay (heatmap).
+    int overlay_ = 0;
+    std::string overlayKey_;
+    std::vector<SquareTint> overlayTints_;
 
     // Whole-game analysis.
     bool wantBatch_ = false;

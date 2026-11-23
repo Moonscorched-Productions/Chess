@@ -26,7 +26,12 @@
 #include "ui/OpeningsScreen.h"
 #include "ui/PlayScreen.h"
 #include "ui/PuzzleScreen.h"
+#include "ui/QualityBadge.h"
+#include "ui/Common.h"
+#include "ui/ReviewScreen.h"
+#include "ui/StatisticsScreen.h"
 #include "storage/PuzzleStore.h"
+#include "storage/ReviewStore.h"
 #include "storage/TrainingStore.h"
 #include "ui/SettingsScreen.h"
 
@@ -43,12 +48,12 @@ struct SectionInfo {
 constexpr std::array<SectionInfo, 9> kSections = {{
     {Section::Play, "Play", nullptr},
     {Section::Analysis, "Analysis", nullptr},
-    {Section::Review, "Game Review", "Phase 4"},
+    {Section::Review, "Game Review", nullptr},
     {Section::Puzzles, "Puzzles", nullptr},
     {Section::Openings, "Openings", nullptr},
     {Section::Endgames, "Endgames", nullptr},
     {Section::Library, "Game Library", nullptr},
-    {Section::Statistics, "Statistics", "Phase 4"},
+    {Section::Statistics, "Statistics", nullptr},
     {Section::Settings, "Settings", nullptr},
 }};
 
@@ -111,6 +116,30 @@ Options Options::parse(int argc, char** argv) {
             options.ply = std::atoi(argv[++i]);
         } else if (arg == "--analyse-game") {
             options.analyseGame = true;
+        } else if (arg == "--review") {
+            options.openReview = true;
+        } else if (arg == "--review-all") {
+            options.reviewAll = true;
+        } else if (arg == "--statistics") {
+            options.openStatistics = true;
+        } else if (arg == "--player" && hasValue) {
+            options.playerNames = argv[++i];
+        } else if (arg == "--light") {
+            options.lightMode = true;
+        } else if (arg == "--fullscreen") {
+            options.fullscreen = true;
+        } else if (arg == "--blindfold") {
+            options.blindfold = true;
+        } else if (arg == "--make-puzzles") {
+            options.makePuzzles = true;
+        } else if (arg == "--overlay" && hasValue) {
+            options.overlay = std::atoi(argv[++i]);
+        } else if (arg == "--fen" && hasValue) {
+            options.fen = argv[++i];
+        } else if (arg == "--compare" && hasValue) {
+            options.compareEngine = argv[++i];
+        } else if (arg == "--syzygy" && hasValue) {
+            options.syzygyPath = argv[++i];
         } else if (arg == "--discord") {
             options.forceDiscord = true;
         } else if (arg == "--no-save") {
@@ -144,10 +173,18 @@ App::App(const Options& options)
     imguiReady_ = ImGui::SFML::Init(window_, false);
     if (!imguiReady_) return;
     ImGui::GetIO().IniFilename = nullptr;
-    applyTheme();
+    if (!options_.playerNames.empty()) settings_.playerNames = options_.playerNames;
+    if (options_.lightMode) settings_.lightMode = true;
+    if (options_.fullscreen) settings_.fullscreen = true;
+    if (options_.blindfold) settings_.blindfold = true;
+    if (!options_.compareEngine.empty()) settings_.compareEnginePath = options_.compareEngine;
+    if (!options_.syzygyPath.empty()) settings_.syzygyPath = options_.syzygyPath;
+    windowedSize_ = sf::Vector2u{options_.width, options_.height};
+    applyAppearance();
 
     const std::string missing = assets_.load(findUpwards("data"));
     if (!missing.empty()) assetWarning_ = "Missing data files: " + missing;
+    if (assets_.hasBadges()) ui::setQualityBadgeSheet(assets_.badgesTexture());
 
     const std::filesystem::path databaseFile = databasePath(options_.temporarySettings);
     std::string storeError;
@@ -179,6 +216,10 @@ App::App(const Options& options)
     }
     if (const core::EndgamePosition* endgame = core::findEndgame(options_.endgameId.c_str())) play_->startChallenge(*endgame);
     library_ = std::make_unique<ui::LibraryScreen>(store_.get(), databaseFile, storeError);
+    // Opened after the game store: the review queries read its table.
+    if (store_) reviewStore_ = storage::ReviewStore::open(databaseFile);
+    review_ = std::make_unique<ui::ReviewScreen>(settings_, assets_, store_.get(), reviewStore_.get(), &openingBook_);
+    statistics_ = std::make_unique<ui::StatisticsScreen>(settings_, reviewStore_.get());
     settingsScreen_ = std::make_unique<ui::SettingsScreen>(settings_, presence_);
 
     if (options_.openSettings) section_ = Section::Settings;
@@ -187,26 +228,41 @@ App::App(const Options& options)
     if (options_.openPuzzles) section_ = Section::Puzzles;
     if (options_.openOpenings) section_ = Section::Openings;
     if (options_.openEndgames) section_ = Section::Endgames;
+    if (options_.openReview) section_ = Section::Review;
+    if (options_.openStatistics) section_ = Section::Statistics;
     if (!options_.pgnFile.empty()) {
         std::ifstream input(pathFromUtf8(options_.pgnFile), std::ios::binary);
         const std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-        if (std::optional<core::GameRecord> record = core::parsePgn(text)) analysis_->load(std::move(*record));
+        if (std::optional<core::GameRecord> record = core::parsePgn(text)) {
+            if (options_.openReview) review_->load(*record);
+            analysis_->load(std::move(*record));
+        }
     }
+    if (!options_.fen.empty() && core::validateFen(options_.fen)) {
+        analysis_->load(core::GameRecord{{}, core::GameTree(options_.fen)});
+    }
+    analysis_->setOverlay(options_.overlay);
+    if (options_.makePuzzles) review_->requestPuzzles();
     if (options_.ply >= 0) analysis_->goToPly(options_.ply);
+    if (options_.ply >= 0) review_->goToPly(options_.ply);
     if (options_.analyseGame) analysis_->requestGameAnalysis();
     if (!options_.importFile.empty() && store_) store_->importFile(pathFromUtf8(options_.importFile));
+    if (options_.reviewAll) review_->reviewAll();
 }
 
 App::~App() {
     saveSettings();
     // Screens hold engine processes and textures; release them before the window goes away.
     settingsScreen_.reset();
+    statistics_.reset();
+    review_.reset();
     library_.reset();
     puzzles_.reset();
     openings_.reset();
     endgames_.reset();
     analysis_.reset();
     play_.reset();
+    reviewStore_.reset();
     store_.reset();
     puzzleStore_.reset();
     trainingStore_.reset();
@@ -216,7 +272,42 @@ App::~App() {
 // Moves games and requests between the screens, which do not know each other.
 void App::routeRequests() {
     if (play_->consumeSettingsChanged() || analysis_->consumeSettingsChanged()) saveSettings();
-    if (play_->consumeLibraryChanged()) library_->markDirty();
+    if (statistics_->consumeSettingsChanged() || puzzles_->consumeSettingsChanged()) saveSettings();
+
+    // Puzzles made in Game Review go into the puzzle collection.
+    if (const std::optional<std::vector<core::Puzzle>> made = review_->takeGeneratedPuzzles()) {
+        int added = 0;
+        if (puzzleStore_) {
+            for (const core::Puzzle& puzzle : *made) {
+                if (!puzzleStore_->get(puzzle.id) && puzzleStore_->add(puzzle)) ++added;
+            }
+        }
+        review_->onPuzzlesStored(static_cast<int>(made->size()), added);
+    }
+    if (play_->consumeLibraryChanged()) {
+        library_->markDirty();
+        review_->markDirty();
+    }
+    if (library_->consumeChanged()) {
+        review_->markDirty();
+        statistics_->markDirty();
+    }
+    if (review_->consumeReviewsChanged()) statistics_->markDirty();
+    if (statistics_->consumeReviewRequest()) section_ = Section::Review;
+
+    // Games sent to Game Review.
+    if (std::optional<ui::PlayScreen::ReviewRequest> request = play_->takeReviewRequest()) {
+        review_->load(std::move(request->record), request->libraryId);
+        section_ = Section::Review;
+    }
+    if (std::optional<ui::LibraryScreen::OpenRequest> request = library_->takeReviewRequest()) {
+        review_->load(std::move(request->record), request->id);
+        section_ = Section::Review;
+    }
+    if (std::optional<ui::ReviewScreen::AnalysisRequest> request = review_->takeAnalysisRequest()) {
+        analysis_->load(std::move(request->record), request->libraryId);
+        section_ = Section::Analysis;
+    }
 
     if (std::optional<core::GameRecord> record = openings_->takeAnalysisRequest()) {
         analysis_->load(std::move(*record));
@@ -256,6 +347,7 @@ void App::routeRequests() {
         }
         analysis_->onSaved(id);
         library_->markDirty();
+        review_->markDirty();
     }
 }
 
@@ -267,6 +359,10 @@ void App::updatePresence() {
     switch (section_) {
         case Section::Play: text = play_->presence(); break;
         case Section::Analysis: text = analysis_->presence(); break;
+        case Section::Review: text = review_->presence(); break;
+        case Section::Statistics:
+            text.details = "Looking at statistics";
+            break;
         case Section::Puzzles: text = puzzles_->presence(); break;
         case Section::Openings: text = openings_->presence(); break;
         case Section::Endgames:
@@ -284,6 +380,28 @@ void App::updatePresence() {
     }
     presence_.set(text);
     presence_.tick();
+}
+
+void App::applyAppearance() {
+    appliedLightMode_ = settings_.lightMode;
+    applyTheme(settings_.lightMode);
+    ui::setColorScheme(settings_.lightMode);
+}
+
+// Switches between the window and fullscreen. The window is created anew, so this must
+// happen between frames.
+void App::applyWindowMode() {
+    liveResize_.remove();
+    if (settings_.fullscreen) {
+        if (!appliedFullscreen_) windowedSize_ = window_.getSize();
+        window_.create(sf::VideoMode::getDesktopMode(), "Chess", sf::State::Fullscreen);
+    } else {
+        window_.create(sf::VideoMode(windowedSize_), "Chess", sf::Style::Default, sf::State::Windowed);
+    }
+    appliedFullscreen_ = settings_.fullscreen;
+    window_.setVerticalSyncEnabled(true);
+    window_.setMinimumSize(sf::Vector2u{900u, 600u});
+    liveResize_.install(reinterpret_cast<void*>(window_.getNativeHandle()), [this] { frame(); });
 }
 
 void App::saveSettings() {
@@ -304,8 +422,13 @@ int App::run() {
         while (const std::optional event = window_.pollEvent()) {
             ImGui::SFML::ProcessEvent(window_, *event);
             if (event->is<sf::Event::Closed>()) window_.close();
+            if (const auto* key = event->getIf<sf::Event::KeyPressed>(); key != nullptr && key->code == sf::Keyboard::Key::F11) {
+                settings_.fullscreen = !settings_.fullscreen;
+                saveSettings();
+            }
         }
         if (!window_.isOpen()) break;
+        if (settings_.fullscreen != appliedFullscreen_) applyWindowMode();
 
         if (!options_.screenshotPath.empty() && runClock.getElapsedTime().asSeconds() >= options_.screenshotAfter) {
             screenshotRequested_ = true;
@@ -329,6 +452,7 @@ void App::frame() {
     play_->update();
     analysis_->update(section_ == Section::Analysis);
     library_->update();
+    review_->update();
     if (section_ == Section::Puzzles) puzzles_->update();
     if (section_ == Section::Openings) openings_->update();
     routeRequests();
@@ -339,7 +463,7 @@ void App::frame() {
     drawSidebar(sidebarWidth, display.y);
     drawContent(sidebarWidth, display.x - sidebarWidth, display.y);
 
-    window_.clear(sf::Color(22, 21, 18));
+    window_.clear(settings_.lightMode ? sf::Color(237, 235, 231) : sf::Color(22, 21, 18));
     ImGui::SFML::Render(window_);
     if (screenshotRequested_) {
         screenshotRequested_ = false;
@@ -410,10 +534,16 @@ void App::drawContent(float x, float width, float height) {
         puzzles_->draw();
     } else if (section_ == Section::Library) {
         library_->draw();
+    } else if (section_ == Section::Review) {
+        review_->draw();
+    } else if (section_ == Section::Statistics) {
+        statistics_->draw();
     } else if (section_ == Section::Settings) {
         const ui::SettingsScreen::Changes changes = settingsScreen_->draw();
         if (changes.any) {
             saveSettings();
+            if (settings_.lightMode != appliedLightMode_) applyAppearance();
+            statistics_->markDirty();
             play_->onSettingsChanged(changes.enginePath);
             analysis_->onSettingsChanged(changes.enginePath);
         }

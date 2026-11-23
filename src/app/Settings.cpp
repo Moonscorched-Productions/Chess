@@ -128,6 +128,24 @@ Settings Settings::load(const std::filesystem::path& file) {
             readBool(value, settings.showBestMoveArrow);
         } else if (key == "discord_presence") {
             readBool(value, settings.discordPresence);
+        } else if (key == "engine_options") {
+            settings.engineOptions = std::string(value);
+        } else if (key == "syzygy_path") {
+            settings.syzygyPath = std::string(value);
+        } else if (key == "compare_engine_path") {
+            settings.compareEnginePath = std::string(value);
+        } else if (key == "compare_engine_options") {
+            settings.compareEngineOptions = std::string(value);
+        } else if (key == "compare_engines") {
+            readBool(value, settings.compareEngines);
+        } else if (key == "fullscreen") {
+            readBool(value, settings.fullscreen);
+        } else if (key == "blindfold") {
+            readBool(value, settings.blindfold);
+        } else if (key == "player_names") {
+            settings.playerNames = std::string(value);
+        } else if (key == "light_mode") {
+            readBool(value, settings.lightMode);
         } else if (key == "save_games_to_library") {
             readBool(value, settings.saveGamesToLibrary);
         } else if (key == "play_as") {
@@ -173,6 +191,15 @@ bool Settings::save(const std::filesystem::path& file) const {
     out << "show_best_move_arrow=" << (showBestMoveArrow ? 1 : 0) << '\n';
     out << "save_games_to_library=" << (saveGamesToLibrary ? 1 : 0) << '\n';
     out << "discord_presence=" << (discordPresence ? 1 : 0) << '\n';
+    out << "engine_options=" << engineOptions << '\n';
+    out << "syzygy_path=" << syzygyPath << '\n';
+    out << "compare_engine_path=" << compareEnginePath << '\n';
+    out << "compare_engine_options=" << compareEngineOptions << '\n';
+    out << "compare_engines=" << (compareEngines ? 1 : 0) << '\n';
+    out << "fullscreen=" << (fullscreen ? 1 : 0) << '\n';
+    out << "blindfold=" << (blindfold ? 1 : 0) << '\n';
+    out << "player_names=" << playerNames << '\n';
+    out << "light_mode=" << (lightMode ? 1 : 0) << '\n';
     out << "play_as=" << (playAs == ColorChoice::Black ? "black" : playAs == ColorChoice::Random ? "random" : "white") << '\n';
     out << "play_against_engine=" << (playAgainstEngine ? 1 : 0) << '\n';
     out << "light_square=" << writeColor(lightSquare) << '\n';
@@ -186,6 +213,9 @@ bool Settings::save(const std::filesystem::path& file) const {
 }
 
 void Settings::sanitize() {
+    if (playerNames.find_first_not_of(" ,") == std::string::npos) playerNames = "You";
+    for (char& c : playerNames)
+        if (c == '\n' || c == '\r') c = ' ';
     level = std::clamp(level, 1, 8);
     elo = std::clamp(elo, 1320, 3190);
     thinkTimeMs = std::clamp(thinkTimeMs, 100, 30000);

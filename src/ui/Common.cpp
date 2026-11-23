@@ -14,6 +14,16 @@ ImU32 toU32(const std::array<float, 3>& color) {
 
 }  // namespace
 
+void setColorScheme(bool light) {
+    // Darker tones keep their contrast on a light background.
+    kErrorColor = light ? ImVec4(0.78f, 0.22f, 0.18f, 1.0f) : ImVec4(0.90f, 0.42f, 0.38f, 1.0f);
+    kAccentColor = light ? ImVec4(0.25f, 0.52f, 0.14f, 1.0f) : ImVec4(0.60f, 0.80f, 0.40f, 1.0f);
+}
+
+bool blindfoldHidden(const app::Settings& settings) {
+    return settings.blindfold && !(ImGui::IsKeyDown(ImGuiKey_Space) && !ImGui::GetIO().WantTextInput);
+}
+
 BoardOptions boardOptionsFrom(const app::Settings& settings) {
     BoardOptions options;
     options.showCoordinates = settings.showCoordinates;
@@ -30,6 +40,8 @@ std::string formatEval(const core::Eval& eval) {
         return eval.whiteIsAhead() ? "1-0" : "0-1";
     } else if (eval.mate) {
         std::snprintf(buffer, sizeof(buffer), "%sM%d", *eval.mate < 0 ? "-" : "", std::abs(*eval.mate));
+    } else if (std::abs(eval.cp) >= kTablebaseScore) {
+        return eval.cp > 0 ? "+TB" : "-TB";  // a win found in the endgame tablebases
     } else {
         std::snprintf(buffer, sizeof(buffer), "%+.2f", static_cast<double>(eval.cp) / 100.0);
     }
@@ -77,6 +89,8 @@ void drawEvalBar(ImVec2 size, const std::optional<core::Eval>& eval, bool flippe
         text = "#";
     } else if (eval->mate) {
         text = "M" + std::to_string(std::abs(*eval->mate));
+    } else if (std::abs(eval->cp) >= kTablebaseScore) {
+        text = "TB";
     } else {
         char buffer[16];
         std::snprintf(buffer, sizeof(buffer), "%.1f", std::abs(static_cast<double>(eval->cp)) / 100.0);

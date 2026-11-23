@@ -96,6 +96,13 @@ std::string Assets::load(const std::filesystem::path& dataDir) {
         note("piece set");
     }
 
+    // Optional: without the sheet the badges are drawn from simple shapes.
+    badgesLoaded_ = !dataDir.empty() && badges_.loadFromFile(dataDir / "badges" / "badges.png");
+    if (badgesLoaded_) {
+        badges_.setSmooth(true);
+        (void)badges_.generateMipmap();
+    }
+
     const char* files[] = {"move.mp3", "capture.mp3", "mate.mp3"};
     for (std::size_t i = 0; i < buffers_.size(); ++i) {
         sounds_[i].reset();
@@ -108,13 +115,21 @@ std::string Assets::load(const std::filesystem::path& dataDir) {
     return missing;
 }
 
-ImTextureID Assets::piecesTexture() const {
-    // ImGui-SFML expects the OpenGL texture name stored in the ImTextureID.
-    const unsigned int handle = pieces_.getNativeHandle();
+namespace {
+
+// ImGui-SFML expects the OpenGL texture name stored in the ImTextureID.
+ImTextureID textureId(const sf::Texture& texture) {
+    const unsigned int handle = texture.getNativeHandle();
     ImTextureID id{};
     std::memcpy(&id, &handle, sizeof(handle));
     return id;
 }
+
+}  // namespace
+
+ImTextureID Assets::piecesTexture() const { return textureId(pieces_); }
+
+ImTextureID Assets::badgesTexture() const { return textureId(badges_); }
 
 void Assets::pieceUv(core::Piece piece, ImVec2& uv0, ImVec2& uv1) const {
     const sf::Vector2u size = pieces_.getSize();

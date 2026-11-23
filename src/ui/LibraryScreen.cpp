@@ -36,6 +36,12 @@ std::optional<LibraryScreen::OpenRequest> LibraryScreen::takeOpenRequest() {
     return std::exchange(openRequest_, std::nullopt);
 }
 
+std::optional<LibraryScreen::OpenRequest> LibraryScreen::takeReviewRequest() {
+    return std::exchange(reviewRequest_, std::nullopt);
+}
+
+bool LibraryScreen::consumeChanged() { return std::exchange(changed_, false); }
+
 void LibraryScreen::update() {
     if (importDone_.load()) finishImport();
 }
@@ -51,7 +57,7 @@ void LibraryScreen::reload() {
     total_ = store_->count();
 }
 
-void LibraryScreen::openGame(storage::GameId id) {
+void LibraryScreen::openGame(storage::GameId id, bool review) {
     if (store_ == nullptr) return;
     const std::optional<std::string> text = store_->pgn(id);
     std::string error;
@@ -60,7 +66,7 @@ void LibraryScreen::openGame(storage::GameId id) {
         notice_ = "Could not open the game" + (error.empty() ? std::string(".") : ": " + error + ".");
         return;
     }
-    openRequest_ = OpenRequest{id, std::move(*record)};
+    (review ? reviewRequest_ : openRequest_) = OpenRequest{id, std::move(*record)};
 }
 
 void LibraryScreen::startImport(const std::filesystem::path& file) {
@@ -99,6 +105,7 @@ void LibraryScreen::finishImport() {
         notice_ += ".";
     }
     dirty_ = true;
+    changed_ = true;
 }
 
 void LibraryScreen::exportGames(const std::vector<storage::GameId>& ids) {
@@ -147,13 +154,16 @@ void LibraryScreen::draw() {
     const bool hasSelection = selected_ != 0;
     // The actions for the selected game move to their own row in a narrow window.
     const ImGuiStyle& style = ImGui::GetStyle();
-    float actionsWidth = 2.0f * style.ItemSpacing.x;
-    for (const char* label : {"Open in Analysis", "Export...", "Delete"})
+    float actionsWidth = 3.0f * style.ItemSpacing.x;
+    for (const char* label : {"Open in Analysis", "Review", "Export...", "Delete"})
         actionsWidth += ImGui::CalcTextSize(label).x + 2.0f * style.FramePadding.x;
     ImGui::SameLine(0.0f, 24.0f);
     if (ImGui::GetContentRegionAvail().x < actionsWidth) ImGui::NewLine();
     ImGui::BeginDisabled(!hasSelection);
     if (ImGui::Button("Open in Analysis")) openGame(selected_);
+    ImGui::SameLine();
+    if (ImGui::Button("Review")) openGame(selected_, true);
+    ImGui::SetItemTooltip("Let the engine check every move of this game");
     ImGui::SameLine();
     if (ImGui::Button("Export...")) exportGames({selected_});
     ImGui::SameLine();
@@ -230,6 +240,7 @@ void LibraryScreen::draw() {
                 notice_ = "Game deleted.";
                 selected_ = 0;
                 dirty_ = true;
+                changed_ = true;
             }
             ImGui::CloseCurrentPopup();
         }

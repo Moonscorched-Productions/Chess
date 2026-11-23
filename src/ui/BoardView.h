@@ -25,6 +25,12 @@ struct BoardBadge {
     core::MoveQuality quality = core::MoveQuality::None;
 };
 
+// A translucent colour laid over a square, e.g. for a heatmap.
+struct SquareTint {
+    core::Square square = core::kNoSquare;
+    ImU32 color = 0;
+};
+
 struct BoardOptions {
     bool flipped = false;      // true: Black at the bottom
     bool interactive = true;   // false: the user cannot move pieces right now
@@ -36,6 +42,8 @@ struct BoardOptions {
     std::vector<BoardArrow> arrows;  // drawn over the pieces, e.g. engine suggestions
     std::vector<BoardBadge> badges;  // move-quality badges on the corner of a square
     std::vector<core::Square> highlights;  // squares to point out, e.g. a hint
+    std::vector<SquareTint> tints;         // drawn on the squares, below the pieces
+    bool hidePieces = false;               // blindfold: the pieces are there but not drawn
 };
 
 // Draws a position and turns mouse input into move requests.

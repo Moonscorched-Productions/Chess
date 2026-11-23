@@ -52,6 +52,12 @@ public:
 
     // The game the user asked to look at in Analysis, if any (cleared by the call).
     std::optional<core::GameRecord> takeAnalysisRequest();
+    // The finished game the user asked to review, with its library entry if it was stored.
+    struct ReviewRequest {
+        core::GameRecord record;
+        std::optional<std::int64_t> libraryId;
+    };
+    std::optional<ReviewRequest> takeReviewRequest();
     // True once after a game was written to the library.
     bool consumeLibraryChanged();
 
@@ -140,6 +146,7 @@ private:
     bool challengeReported_ = false;
     std::optional<ChallengeResult> challengeResult_;
     std::optional<core::GameRecord> analysisRequest_;
+    std::optional<ReviewRequest> reviewRequest_;
 
     // New game dialog draft.
     struct Draft {

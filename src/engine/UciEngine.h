@@ -25,6 +25,7 @@ struct SearchInfo {
     bool isBound = false;       // the score is only a lower or upper bound, not exact
     std::uint64_t nodes = 0;
     std::uint64_t nodesPerSecond = 0;
+    std::uint64_t tbHits = 0;  // positions found in endgame tablebases
     std::string pv;  // space separated UCI moves
 };
 

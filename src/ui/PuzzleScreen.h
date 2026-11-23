@@ -40,6 +40,8 @@ public:
 
     // The puzzle the user asked to look at in Analysis, if any (cleared by the call).
     std::optional<core::GameRecord> takeAnalysisRequest();
+    // True once after this screen changed the settings (so they can be saved).
+    bool consumeSettingsChanged();
     app::PresenceText presence() const;
 
     // Test aid: the solution is played automatically, puzzle after puzzle.
@@ -67,6 +69,7 @@ private:
     void drawRatingGraph(ImVec2 size);
 
     app::Settings& settings_;
+    bool settingsChanged_ = false;
     app::Assets& assets_;
     storage::PuzzleStore* store_;
     std::filesystem::path databaseFile_;

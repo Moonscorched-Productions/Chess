@@ -28,12 +28,18 @@ public:
     // Texture coordinates of a piece inside the piece sheet.
     void pieceUv(core::Piece piece, ImVec2& uv0, ImVec2& uv1) const;
 
+    // The move-quality badge sheet (six cells in a row, in MoveQuality order), if it was found.
+    bool hasBadges() const { return badgesLoaded_; }
+    ImTextureID badgesTexture() const;
+
     // Plays a sound effect at the given volume (0..100).
     void play(SoundId id, int volume);
 
 private:
     sf::Texture pieces_;
     bool piecesLoaded_ = false;
+    sf::Texture badges_;
+    bool badgesLoaded_ = false;
     std::array<sf::SoundBuffer, 3> buffers_;
     std::array<std::optional<sf::Sound>, 3> sounds_;
 };

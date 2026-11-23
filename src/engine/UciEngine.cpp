@@ -70,6 +70,9 @@ std::optional<SearchInfo> parseInfoLine(std::string_view line) {
         } else if (key == "nodes") {
             if (const auto value = parseNumber<std::uint64_t>(next())) info.nodes = *value;
             ++i;
+        } else if (key == "tbhits") {
+            if (const auto value = parseNumber<std::uint64_t>(next())) info.tbHits = *value;
+            ++i;
         } else if (key == "nps") {
             if (const auto value = parseNumber<std::uint64_t>(next())) info.nodesPerSecond = *value;
             ++i;

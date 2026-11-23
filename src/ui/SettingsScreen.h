@@ -25,6 +25,10 @@ private:
     app::Settings& settings_;
     const app::RichPresence& presence_;
     std::array<char, 512> enginePath_{};
+    std::array<char, 512> engineOptions_{};
+    std::array<char, 512> syzygyPath_{};
+    std::array<char, 512> comparePath_{};
+    std::array<char, 512> compareOptions_{};
     std::string detectedEngine_;
 };
 
