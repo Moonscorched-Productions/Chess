@@ -144,6 +144,12 @@ executable or in one of its parent folders. Download a Windows build from
 <https://stockfishchess.org/download/> and unpack it there, or set a path to any UCI
 engine in Settings. The `engines/` folder is not committed.
 
+To make a release archive with the engine and every license included, build in release mode
+and run `python3 tools/package_release.py`. It bundles the first Stockfish executable in
+`engines/` (or `--engine <path>`) with its license (`Copying.txt`) and a `SOURCE.txt` pointing
+to the source of that exact version, as the GPL requires, and writes
+`release/Chess-<version>-<platform>.zip`.
+
 `xmake build ucicheck` builds a small console tool that starts an engine and asks it for a
 move: `xmake run ucicheck <path-to-engine>`.
 
@@ -204,3 +210,8 @@ GNU General Public License as published by the Free Software Foundation, either 
 License, or (at your option) any later version. See `LICENSE`.
 
 Third-party code, data and assets keep their own licenses; see `THIRD_PARTY_NOTICES.md`.
+
+Additional permission under GNU GPL version 3 section 7: if you modify this program, or any
+covered work, by linking or combining it with the Discord Game SDK (or a modified version of
+that library), containing parts covered by the terms of the Discord Game SDK license, the
+licensors of this program grant you additional permission to convey the resulting work.
