@@ -35,7 +35,13 @@ public:
     // Plays a sound effect at the given volume (0..100).
     void play(SoundId id, int volume);
 
+    // Replaces a sound effect with the user's own file (ogg, mp3, wav or flac); an empty path
+    // brings back the built-in one. Returns false, and uses the built-in sound, when the file
+    // cannot be read.
+    bool setSound(SoundId id, const std::filesystem::path& custom);
+
 private:
+    std::filesystem::path dataDir_;
     sf::Texture pieces_;
     bool piecesLoaded_ = false;
     sf::Texture badges_;

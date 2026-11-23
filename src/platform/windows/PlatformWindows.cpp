@@ -49,9 +49,11 @@ std::optional<fs::path> runDialog(bool save, const FileType& type, const fs::pat
 
     // The filter is a list of null separated pairs, ended by an empty string.
     const std::wstring extension = fs::path(type.extension).wstring();
-    std::wstring filter = fs::path(type.description).wstring() + L" (*." + extension + L")";
+    std::wstring patterns = L"*." + extension;
+    for (const std::string& other : type.alternatives) patterns += L";*." + fs::path(other).wstring();
+    std::wstring filter = fs::path(type.description).wstring() + L" (" + patterns + L")";
     filter.push_back(L'\0');
-    filter += L"*." + extension;
+    filter += patterns;
     filter.push_back(L'\0');
     filter += L"All files (*.*)";
     filter.push_back(L'\0');

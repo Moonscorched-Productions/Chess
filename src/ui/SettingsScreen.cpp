@@ -7,6 +7,7 @@
 
 #include <imgui.h>
 
+#include "app/FileDialog.h"
 #include "app/Paths.h"
 #include "app/RichPresence.h"
 
@@ -41,8 +42,8 @@ bool textField(const char* id, const char* hint, std::array<char, 512>& buffer, 
 
 }  // namespace
 
-SettingsScreen::SettingsScreen(app::Settings& settings, const app::RichPresence& presence)
-    : settings_(settings), presence_(presence) {
+SettingsScreen::SettingsScreen(app::Settings& settings, app::Assets& assets, const app::RichPresence& presence)
+    : settings_(settings), assets_(assets), presence_(presence) {
     const std::size_t length = std::min(settings_.enginePath.size(), enginePath_.size() - 1);
     std::memcpy(enginePath_.data(), settings_.enginePath.data(), length);
     enginePath_[length] = '\0';
@@ -220,12 +221,60 @@ SettingsScreen::Changes SettingsScreen::draw() {
     ImGui::BeginDisabled(!s.soundEnabled);
     row("Volume");
     changes.any |= ImGui::SliderInt("##volume", &s.soundVolume, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+    changes.any |= soundRow("Move sound", app::SoundId::Move, s.moveSoundFile);
+    changes.any |= soundRow("Capture sound", app::SoundId::Capture, s.captureSoundFile);
+    changes.any |= soundRow("Checkmate sound", app::SoundId::GameEnd, s.gameEndSoundFile);
+    if (!soundError_.empty()) {
+        ImGui::SetCursorPosX(kLabelWidth);
+        ImGui::TextDisabled("%s", soundError_.c_str());
+    }
     ImGui::EndDisabled();
 
     ImGui::EndChild();
 
     if (changes.any) s.sanitize();
     return changes;
+}
+
+bool SettingsScreen::soundRow(const char* label, app::SoundId id, std::string& file) {
+    bool changed = false;
+    ImGui::PushID(label);
+    row(label);
+    if (ImGui::Button("Choose...")) {
+        if (const auto chosen = app::openSoundDialog()) {
+            if (assets_.setSound(id, *chosen)) {
+                file = app::pathToUtf8(*chosen);
+                soundError_.clear();
+                changed = true;
+                assets_.play(id, settings_.soundVolume);
+            } else {
+                soundError_ = "Could not read " + app::pathToUtf8(chosen->filename()) + " as a sound (use ogg, mp3, wav or flac).";
+                assets_.setSound(id, app::pathFromUtf8(file));  // back to the sound in use before
+            }
+        }
+    }
+    ImGui::SetItemTooltip("Pick your own sound file: ogg, mp3, wav or flac");
+    ImGui::SameLine();
+    if (ImGui::Button("Play")) assets_.play(id, settings_.soundVolume);
+    if (!file.empty()) {
+        ImGui::SameLine();
+        if (ImGui::Button("Reset")) {
+            file.clear();
+            assets_.setSound(id, {});
+            soundError_.clear();
+            changed = true;
+        }
+        ImGui::SetItemTooltip("Use the built-in sound again");
+    }
+    ImGui::SameLine();
+    if (file.empty()) {
+        ImGui::TextDisabled("Built-in");
+    } else {
+        ImGui::TextUnformatted(app::pathToUtf8(app::pathFromUtf8(file).filename()).c_str());
+        ImGui::SetItemTooltip("%s", file.c_str());
+    }
+    ImGui::PopID();
+    return changed;
 }
 
 }  // namespace ui

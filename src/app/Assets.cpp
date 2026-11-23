@@ -77,6 +77,9 @@ bool loadSvgSheet(sf::Texture& texture, const std::filesystem::path& dir) {
     return texture.loadFromImage(sheet);
 }
 
+// The built-in sound effects in data/sfx, in SoundId order.
+constexpr std::array<const char*, 3> kSoundFiles = {"move.ogg", "capture.ogg", "mate.ogg"};
+
 }  // namespace
 
 std::string Assets::load(const std::filesystem::path& dataDir) {
@@ -103,16 +106,22 @@ std::string Assets::load(const std::filesystem::path& dataDir) {
         (void)badges_.generateMipmap();
     }
 
-    const char* files[] = {"move.ogg", "capture.ogg", "mate.ogg"};
+    dataDir_ = dataDir;
     for (std::size_t i = 0; i < buffers_.size(); ++i) {
-        sounds_[i].reset();
-        if (!dataDir.empty() && buffers_[i].loadFromFile(dataDir / "sfx" / files[i])) {
-            sounds_[i].emplace(buffers_[i]);
-        } else {
-            note(files[i]);
-        }
+        setSound(static_cast<SoundId>(i), {});
+        if (!sounds_[i]) note(kSoundFiles[i]);
     }
     return missing;
+}
+
+bool Assets::setSound(SoundId id, const std::filesystem::path& custom) {
+    const std::size_t i = static_cast<std::size_t>(id);
+    sounds_[i].reset();  // the sound refers to the buffer that is about to change
+    const bool customLoaded = !custom.empty() && buffers_[i].loadFromFile(custom);
+    if (customLoaded || (!dataDir_.empty() && buffers_[i].loadFromFile(dataDir_ / "sfx" / kSoundFiles[i]))) {
+        sounds_[i].emplace(buffers_[i]);
+    }
+    return custom.empty() || customLoaded;
 }
 
 namespace {

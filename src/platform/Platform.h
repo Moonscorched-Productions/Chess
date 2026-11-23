@@ -48,6 +48,8 @@ float windowScaleFactor(void* window);
 struct FileType {
     std::string description;  // e.g. "PGN files"
     std::string extension;    // without the dot, e.g. "pgn"
+    // Further extensions the open dialog accepts, e.g. {"mp3", "wav"}. Saving uses `extension`.
+    std::vector<std::string> alternatives = {};
 };
 
 // Native dialogs. They block until the user answers and return nullopt on cancel

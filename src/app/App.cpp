@@ -226,6 +226,10 @@ App::App(const Options& options)
     const std::string missing = assets_.load(findUpwards("data"));
     if (!missing.empty()) assetWarning_ = "Missing data files: " + missing;
     if (assets_.hasBadges()) ui::setQualityBadgeSheet(assets_.badgesTexture());
+    // The user's own sound effects; a file that is gone falls back to the built-in sound.
+    assets_.setSound(SoundId::Move, pathFromUtf8(settings_.moveSoundFile));
+    assets_.setSound(SoundId::Capture, pathFromUtf8(settings_.captureSoundFile));
+    assets_.setSound(SoundId::GameEnd, pathFromUtf8(settings_.gameEndSoundFile));
 
     const std::filesystem::path databaseFile = databasePath(options_.temporarySettings);
     std::string storeError;
@@ -262,7 +266,7 @@ App::App(const Options& options)
     if (store_) reviewStore_ = storage::ReviewStore::open(databaseFile);
     review_ = std::make_unique<ui::ReviewScreen>(settings_, assets_, store_.get(), reviewStore_.get(), &openingBook_);
     statistics_ = std::make_unique<ui::StatisticsScreen>(settings_, reviewStore_.get());
-    settingsScreen_ = std::make_unique<ui::SettingsScreen>(settings_, presence_);
+    settingsScreen_ = std::make_unique<ui::SettingsScreen>(settings_, assets_, presence_);
 
     if (options_.openSettings) section_ = Section::Settings;
     if (options_.openAnalysis) section_ = Section::Analysis;

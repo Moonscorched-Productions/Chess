@@ -75,6 +75,10 @@ struct Settings {
     // Sound
     bool soundEnabled = true;
     int soundVolume = 70;  // 0..100
+    // The user's own sound files (ogg, mp3, wav or flac); empty = the built-in sound.
+    std::string moveSoundFile;
+    std::string captureSoundFile;
+    std::string gameEndSoundFile;
 
     // Reads settings from the file. Missing or malformed entries keep their defaults.
     static Settings load(const std::filesystem::path& file);

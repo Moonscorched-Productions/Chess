@@ -57,11 +57,15 @@ std::optional<fs::path> runDialog(bool save, const FileType& type, const fs::pat
     if (save) {
         script = "POSIX path of (choose file name with prompt \"Save\" default name \"" + name + "\")";
     } else {
-        script = "POSIX path of (choose file with prompt \"Open\" of type {\"" + extension + "\"})";
+        std::string types = "\"" + extension + "\"";
+        for (const std::string& other : type.alternatives) types += ", \"" + plainText(other) + "\"";
+        script = "POSIX path of (choose file with prompt \"Open\" of type {" + types + "})";
     }
     const std::string result = firstLineOf("osascript -e '" + script + "' 2>/dev/null");
 #else
-    std::string command = "zenity --file-selection --file-filter=\"*." + extension + "\"";
+    std::string patterns = "*." + extension;
+    for (const std::string& other : type.alternatives) patterns += " *." + plainText(other);
+    std::string command = "zenity --file-selection --file-filter=\"" + patterns + "\"";
     if (save) command += " --save --confirm-overwrite --filename=\"" + name + "\"";
     const std::string result = firstLineOf(command + " 2>/dev/null");
 #endif

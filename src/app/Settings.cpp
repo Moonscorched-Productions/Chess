@@ -168,6 +168,12 @@ Settings Settings::load(const std::filesystem::path& file) {
             readBool(value, settings.soundEnabled);
         } else if (key == "sound_volume") {
             readInt(value, settings.soundVolume);
+        } else if (key == "sound_move_file") {
+            settings.moveSoundFile = std::string(value);
+        } else if (key == "sound_capture_file") {
+            settings.captureSoundFile = std::string(value);
+        } else if (key == "sound_game_end_file") {
+            settings.gameEndSoundFile = std::string(value);
         }
     }
     settings.sanitize();
@@ -212,6 +218,9 @@ bool Settings::save(const std::filesystem::path& file) const {
     out << "animations=" << (animations ? 1 : 0) << '\n';
     out << "sound_enabled=" << (soundEnabled ? 1 : 0) << '\n';
     out << "sound_volume=" << soundVolume << '\n';
+    out << "sound_move_file=" << moveSoundFile << '\n';
+    out << "sound_capture_file=" << captureSoundFile << '\n';
+    out << "sound_game_end_file=" << gameEndSoundFile << '\n';
     return static_cast<bool>(out.flush());
 }
 

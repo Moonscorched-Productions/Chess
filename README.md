@@ -25,6 +25,9 @@ Play:
   as an arrow. Hints come from a second engine process at full strength, whatever level the
   opponent plays at.
 - Fullscreen with F11 or in Settings.
+- Your own sound effects: in Settings, "Choose..." picks a file (ogg, mp3, wav or flac) for the
+  move, capture and checkmate sounds, for example the ones from Lichess; "Reset" brings back the
+  built-in sound.
 - Settings (engine, dark or light mode, board colours, hints, animations, sound) saved to
   `%APPDATA%\ChessDesktop\settings.ini`.
 
