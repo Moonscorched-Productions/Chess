@@ -52,7 +52,7 @@ std::uint32_t readUint32(std::string_view bytes) {
 }
 
 // A JSON string literal, quotes included.
-std::string quoted(std::string_view text) {
+std::string jsonQuoted(std::string_view text) {
     std::string out = "\"";
     for (const char c : text) {
         switch (c) {
@@ -122,7 +122,7 @@ struct RichPresence::Impl {
         for (const std::string& endpoint : platform::discordEndpoints()) {
             connection = platform::LocalConnection::open(endpoint);
             if (!connection) continue;
-            const std::string hello = std::string("{\"v\":1,\"client_id\":") + quoted(kApplicationId) + "}";
+            const std::string hello = std::string("{\"v\":1,\"client_id\":") + jsonQuoted(kApplicationId) + "}";
             if (connection->write(frame(Handshake, hello))) {
                 handshakeAt = Clock::now();
                 return;
@@ -144,14 +144,14 @@ struct RichPresence::Impl {
             activity = "{";
             const std::string details = fitText(text.details);
             const std::string state = fitText(text.state);
-            if (!details.empty()) activity += "\"details\":" + quoted(details) + ",";
-            if (!state.empty()) activity += "\"state\":" + quoted(state) + ",";
+            if (!details.empty()) activity += "\"details\":" + jsonQuoted(details) + ",";
+            if (!state.empty()) activity += "\"state\":" + jsonQuoted(state) + ",";
             activity += "\"timestamps\":{\"start\":" + std::to_string(startedAt) + "},";
-            activity += "\"assets\":{\"large_image\":" + quoted(kLargeImage) + ",\"large_text\":" + quoted(kLargeText) + "}}";
+            activity += "\"assets\":{\"large_image\":" + jsonQuoted(kLargeImage) + ",\"large_text\":" + jsonQuoted(kLargeText) + "}}";
         }
         const std::string command = "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":" +
                                     std::to_string(platform::currentProcessId()) + ",\"activity\":" + activity +
-                                    "},\"nonce\":" + quoted(std::to_string(++nonce)) + "}";
+                                    "},\"nonce\":" + jsonQuoted(std::to_string(++nonce)) + "}";
         if (sendCommand(command)) {
             dirty = false;
             lastSend = Clock::now();
