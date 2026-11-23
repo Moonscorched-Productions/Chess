@@ -19,6 +19,14 @@ fs::path findUpwards(std::string_view name) {
     for (int depth = 0; depth < 8 && !dir.empty(); ++depth) {
         const fs::path candidate = dir / name;
         if (fs::exists(candidate, ec)) return candidate;
+#ifdef __APPLE__
+        // Inside an app bundle the program is in Contents/MacOS, data in Contents/Resources
+        // and helper programs (the engine) in Contents/Helpers.
+        for (const char* bundleFolder : {"Resources", "Helpers"}) {
+            const fs::path inBundle = dir / bundleFolder / name;
+            if (fs::exists(inBundle, ec)) return inBundle;
+        }
+#endif
         const fs::path parent = dir.parent_path();
         if (parent == dir) break;
         dir = parent;

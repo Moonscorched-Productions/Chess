@@ -14,6 +14,13 @@ end
 add_requires("sfml 3.0.1", "imgui-sfml v3.0", "nanosvg", "sqlite3")
 add_requires("doctest")
 
+if is_plat("macosx") then
+    -- Build FreeType into the program instead of linking a Homebrew copy other Macs do not have.
+    -- (Release builds for other Macs also lower the minimum macOS version; tools/package_release.py
+    -- configures that with `xmake f --target_minver=11.0`.)
+    add_requireconfs("**.freetype", {system = false})
+end
+
 if is_plat("windows") then
     add_defines("NOMINMAX", "WIN32_LEAN_AND_MEAN", "UNICODE", "_UNICODE")
     add_cxflags("/utf-8")
@@ -36,7 +43,6 @@ target("platform")
         add_syslinks("comctl32", "comdlg32", {public = true})
     else
         add_files("src/platform/posix/*.cpp")
-        add_syslinks("dl", {public = true})
         if is_plat("macosx") then
             add_files("src/platform/macos/*.mm")
             add_frameworks("AppKit", "OpenGL", {public = true})
@@ -69,21 +75,6 @@ target("chess")
         -- Static SFML keeps Objective-C category methods (e.g. -[SFOpenGLView enableKeyRepeat])
         -- in object files the linker would otherwise drop; -ObjC forces them in.
         add_ldflags("-ObjC", {force = true})
-    end
-    -- Optional Discord Rich Presence: enabled when the Discord Game SDK has been unpacked
-    -- into third_party/discord_game_sdk (see README). The DLL is loaded at run time.
-    if os.isfile("third_party/discord_game_sdk/c/discord_game_sdk.h") then
-        add_defines("CHESS_DISCORD")
-        add_includedirs("third_party/discord_game_sdk/c")
-        after_build(function (target)
-            local arch = target:is_arch("arm64", "aarch64") and "aarch64" or "x86_64"
-            local name = target:is_plat("windows") and "discord_game_sdk.dll"
-                or (target:is_plat("macosx") and "discord_game_sdk.dylib" or "discord_game_sdk.so")
-            local dll = path.join("third_party/discord_game_sdk/lib", arch, name)
-            if os.isfile(dll) then
-                os.cp(dll, target:targetdir())
-            end
-        end)
     end
 
 target("tests")

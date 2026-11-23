@@ -125,10 +125,10 @@ xmake build chess
 xmake run chess
 ```
 
-All operating system specifics (engine process, user folders, file dialogs, loading the
-Discord library, redrawing during a window resize) live in `src/platform`, with one
-implementation for Windows and one for macOS and Linux. Development and testing so far
-happened on Windows only: the macOS and Linux implementation is written but has not been
+All operating system specifics (engine process, user folders, file dialogs, the connection to
+Discord, high-DPI windows, redrawing during a window resize) live in `src/platform`, with one
+implementation for Windows and one for macOS and Linux (plus a few macOS-only parts in
+`src/platform/macos`). Windows and macOS are built and tested; the Linux build has not been
 compiled or run yet.
 
 On macOS and Linux, user data goes to `~/Library/Application Support/ChessDesktop` or
@@ -144,39 +144,38 @@ executable or in one of its parent folders. Download a Windows build from
 <https://stockfishchess.org/download/> and unpack it there, or set a path to any UCI
 engine in Settings. The `engines/` folder is not committed.
 
-To make a release archive with the engine and every license included, build in release mode
-and run `python3 tools/package_release.py`. It bundles the first Stockfish executable in
-`engines/` (or `--engine <path>`) with its license (`Copying.txt`) and a `SOURCE.txt` pointing
-to the source of that exact version, as the GPL requires, and writes
-`release/Chess-<version>-<platform>.zip`.
+To make a release with the engine and every license included, run
+`python3 tools/package_release.py`. It builds the release version, bundles the first Stockfish
+executable in `engines/` (or `--engine <path>`) with its license (`Copying.txt`) and a
+`SOURCE.txt` pointing to the source of that exact version, as the GPL requires, and writes to
+`release/`:
+
+- Windows and Linux: `Chess-<version>-<platform>.zip`, a folder with the program, `data/` and
+  `engines/`.
+- macOS: `Chess-<version>-macos-arm64.dmg` with `Chess.app` (Apple Silicon, macOS 13 or later).
+  The build targets macOS 13 and FreeType is compiled in, so the app runs on Macs without
+  developer tools. It is signed ad hoc: on another Mac, the first launch needs System Settings >
+  Privacy & Security > "Open Anyway". With an Apple Developer ID, pass
+  `--sign "Developer ID Application: Name (TEAMID)"` and `--notarize <profile>` (a
+  `xcrun notarytool store-credentials` profile) to get an app that opens without that step.
 
 `xmake build ucicheck` builds a small console tool that starts an engine and asks it for a
 move: `xmake run ucicheck <path-to-engine>`.
 
-## Discord Rich Presence (optional)
+## Discord Rich Presence
 
 The app can show what you are doing ("Playing Stockfish 19 (level 3) - Move 12",
-"Analysing a game", ...) in your Discord status. It uses the legacy Discord Game SDK, which
-is not committed. To enable it, unpack
-[discord_game_sdk.zip](https://dl-game-sdk.discordapp.net/3.2.1/discord_game_sdk.zip) so
-that these files exist, then rebuild:
-
-```
-third_party/discord_game_sdk/c/discord_game_sdk.h
-third_party/discord_game_sdk/lib/x86_64/discord_game_sdk.dll
-```
-
-The library (`.dll` on Windows, `.dylib` on macOS, from `lib/x86_64` or `lib/aarch64`) is copied next
-to the executable and loaded at run time. Without the SDK, without
-the DLL or without Discord running, the app works as usual. Presence can be switched off in
-Settings.
+"Analysing a game", ...) in your Discord status. It talks directly to the Discord client's local
+RPC connection (`discord-ipc-N`, a Unix socket on macOS and Linux, a named pipe on Windows), so
+no Discord library is needed. Without Discord running, the app works as usual and keeps checking
+in the background. Presence can be switched off in Settings.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
 | `src/chess` | Rules, move history, FEN, the game tree, PGN, move classification, game review and statistics, position facts (attacks, loose pieces, pawn structure), move explanations, puzzle solving and building, repertoire logic, endgame positions. No UI or engine dependencies. |
-| `src/platform` | Operating system layer: child processes, user folders, file dialogs, shared libraries. Windows and macOS/Linux implementations. |
+| `src/platform` | Operating system layer: child processes, user folders, file dialogs, local connections (Discord), high-DPI windows. Windows and macOS/Linux implementations. |
 | `src/engine` | The asynchronous UCI client. |
 | `src/storage` | SQLite stores: games, game reviews, puzzles and attempts, repertoires and training progress. |
 | `src/app` | Window, main loop, settings, theme, assets, background game analysis, puzzle generation, the comparison engine, Discord presence. |
@@ -210,8 +209,3 @@ GNU General Public License as published by the Free Software Foundation, either 
 License, or (at your option) any later version. See `LICENSE`.
 
 Third-party code, data and assets keep their own licenses; see `THIRD_PARTY_NOTICES.md`.
-
-Additional permission under GNU GPL version 3 section 7: if you modify this program, or any
-covered work, by linking or combining it with the Discord Game SDK (or a modified version of
-that library), containing parts covered by the terms of the Discord Game SDK license, the
-licensors of this program grant you additional permission to convey the resulting work.

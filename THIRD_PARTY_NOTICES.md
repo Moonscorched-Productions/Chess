@@ -45,11 +45,10 @@ and a link to the source code of that exact version.
 | `data/puzzles/starter.csv` | [Lichess puzzle database](https://database.lichess.org/#puzzles) | CC0 1.0 |
 | `data/sfx` | [Kenney](https://kenney.nl) sound packs | CC0 1.0 |
 | `data/badges` | Drawn by `tools/make_badges.py` (this project) | GPL version 3, like the program |
+| `data/moon-pawn-icon.png` | Moonscorched Productions (this project) | GPL version 3, like the program |
 
 Lichess is not affiliated with and does not endorse this program.
 
 ## Optional components (not distributed)
 
 - Interface fonts are read from the operating system at run time; none are bundled.
-- The Discord Game SDK is not part of this repository. If a user unpacks it into
-  `third_party/discord_game_sdk`, it is used under Discord's own terms.

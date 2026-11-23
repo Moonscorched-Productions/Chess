@@ -156,15 +156,11 @@ SettingsScreen::Changes SettingsScreen::draw() {
     ImGui::Spacing();
     ImGui::SeparatorText("Discord");
     row("Rich Presence");
-    ImGui::BeginDisabled(!app::RichPresence::available());
     changes.any |= ImGui::Checkbox("##discord", &s.discordPresence);
-    ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::TextDisabled("%s", app::RichPresence::available()
-                                  ? (!s.discordPresence ? "Off."
-                                     : presence_.connected() ? "Connected to Discord."
-                                                             : "Waiting for Discord to be running.")
-                                  : "This build does not include the Discord Game SDK.");
+    ImGui::TextDisabled("%s", !s.discordPresence        ? "Off."
+                              : presence_.connected() ? "Connected to Discord."
+                                                      : "Waiting for Discord to be running.");
 
     // --- Appearance -----------------------------------------------------------
     ImGui::Spacing();

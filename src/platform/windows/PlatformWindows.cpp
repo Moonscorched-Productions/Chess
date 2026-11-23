@@ -81,24 +81,6 @@ std::optional<fs::path> saveFileDialog(const FileType& type, const fs::path& sug
     return runDialog(true, type, suggestedName);
 }
 
-std::string sharedLibraryFileName(std::string_view baseName) { return std::string(baseName) + ".dll"; }
-
-std::unique_ptr<SharedLibrary> SharedLibrary::load(const fs::path& file) {
-    const HMODULE module = LoadLibraryW(file.c_str());
-    if (module == nullptr) return nullptr;
-    std::unique_ptr<SharedLibrary> library(new SharedLibrary());
-    library->handle_ = module;
-    return library;
-}
-
-SharedLibrary::~SharedLibrary() {
-    if (handle_ != nullptr) FreeLibrary(static_cast<HMODULE>(handle_));
-}
-
-void* SharedLibrary::symbol(const char* name) const {
-    return reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(handle_), name));
-}
-
 }  // namespace platform
 
 namespace platform {

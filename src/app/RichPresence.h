@@ -13,11 +13,11 @@ struct PresenceText {
     bool operator==(const PresenceText&) const = default;
 };
 
-// Discord Rich Presence through the (legacy) Discord Game SDK.
+// Discord Rich Presence, talking directly to the Discord client's local RPC connection.
+// No Discord library is needed.
 //
-// Entirely optional: when Discord is not running, the SDK library is missing, or the
-// application was built without the SDK, every call is a harmless no-op. The connection
-// is retried in the background, so Discord may be started or closed at any time.
+// Entirely optional: when Discord is not running every call is a harmless no-op. The
+// connection is retried in the background, so Discord may be started or closed at any time.
 class RichPresence {
 public:
     RichPresence();
@@ -25,16 +25,13 @@ public:
     RichPresence(const RichPresence&) = delete;
     RichPresence& operator=(const RichPresence&) = delete;
 
-    // True when the application was built with the Discord Game SDK.
-    static bool available();
-
     // Turning presence off clears the activity and drops the connection.
     void setEnabled(bool enabled);
     // What to show. Sending is rate limited; only the latest text is kept.
     void set(const PresenceText& text);
-    // Pumps the SDK. Call once per frame.
+    // Connects, reads Discord's messages and sends updates. Call once per frame; never blocks.
     void tick();
-    // True while a connection to a running Discord client is open.
+    // True while a running Discord client has accepted the connection.
     bool connected() const;
 
 private:

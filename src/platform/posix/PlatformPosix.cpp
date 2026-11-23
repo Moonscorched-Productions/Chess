@@ -7,7 +7,6 @@
 #include <cstdlib>
 #include <system_error>
 
-#include <dlfcn.h>
 #include <unistd.h>
 
 #ifdef __APPLE__
@@ -134,28 +133,6 @@ std::optional<fs::path> openFileDialog(const FileType& type) { return runDialog(
 std::optional<fs::path> saveFileDialog(const FileType& type, const fs::path& suggestedName) {
     return runDialog(true, type, suggestedName);
 }
-
-std::string sharedLibraryFileName(std::string_view baseName) {
-#ifdef __APPLE__
-    return std::string(baseName) + ".dylib";
-#else
-    return std::string(baseName) + ".so";
-#endif
-}
-
-std::unique_ptr<SharedLibrary> SharedLibrary::load(const fs::path& file) {
-    void* handle = dlopen(file.c_str(), RTLD_NOW | RTLD_LOCAL);
-    if (handle == nullptr) return nullptr;
-    std::unique_ptr<SharedLibrary> library(new SharedLibrary());
-    library->handle_ = handle;
-    return library;
-}
-
-SharedLibrary::~SharedLibrary() {
-    if (handle_ != nullptr) dlclose(handle_);
-}
-
-void* SharedLibrary::symbol(const char* name) const { return dlsym(handle_, name); }
 
 }  // namespace platform
 

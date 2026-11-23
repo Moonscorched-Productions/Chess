@@ -2,7 +2,8 @@
 
 // Everything the application needs from the operating system, behind one interface.
 // Implementations live in windows/ and posix/ (macOS and Linux); the build picks one.
-// See also Process.h (child processes) and LiveResize.h (drawing during window resize).
+// See also Process.h (child processes), LocalConnection.h (talking to other programs, e.g.
+// Discord) and LiveResize.h (drawing during window resize).
 
 #include <filesystem>
 #include <memory>
@@ -53,27 +54,5 @@ struct FileType {
 // (or when the system offers no dialog).
 std::optional<std::filesystem::path> openFileDialog(const FileType& type);
 std::optional<std::filesystem::path> saveFileDialog(const FileType& type, const std::filesystem::path& suggestedName);
-
-// --- Shared libraries ------------------------------------------------------------
-
-// File name of a shared library on this system: "name.dll", "name.dylib" or "name.so".
-std::string sharedLibraryFileName(std::string_view baseName);
-
-// A dynamically loaded library. Stays loaded for the lifetime of the object.
-class SharedLibrary {
-public:
-    // Returns nullptr if the library cannot be loaded.
-    static std::unique_ptr<SharedLibrary> load(const std::filesystem::path& file);
-    ~SharedLibrary();
-    SharedLibrary(const SharedLibrary&) = delete;
-    SharedLibrary& operator=(const SharedLibrary&) = delete;
-
-    // Address of an exported function or variable, or nullptr.
-    void* symbol(const char* name) const;
-
-private:
-    SharedLibrary() = default;
-    void* handle_ = nullptr;
-};
 
 }  // namespace platform
