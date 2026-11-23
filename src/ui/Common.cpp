@@ -1,6 +1,7 @@
 #include "ui/Common.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -29,6 +30,7 @@ BoardOptions boardOptionsFrom(const app::Settings& settings) {
     options.showCoordinates = settings.showCoordinates;
     options.showLegalMoves = settings.showLegalMoves;
     options.highlightLastMove = settings.highlightLastMove;
+    options.animate = settings.animations;
     options.lightSquare = toU32(settings.lightSquare);
     options.darkSquare = toU32(settings.darkSquare);
     return options;
@@ -60,15 +62,23 @@ const char* nagSymbol(int nag) {
     }
 }
 
-void drawEvalBar(ImVec2 size, const std::optional<core::Eval>& eval, bool flipped) {
+void drawEvalBar(ImVec2 size, const std::optional<core::Eval>& eval, bool flipped, bool animate) {
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     ImGui::Dummy(size);
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
     const ImU32 white = IM_COL32(235, 235, 232, 255);
     const ImU32 black = IM_COL32(48, 46, 43, 255);
-    const float share = eval ? static_cast<float>(eval->whiteWinPercent() / 100.0) : 0.5f;
-    const float whiteHeight = std::clamp(share, 0.0f, 1.0f) * size.y;
+    const float target = std::clamp(eval ? static_cast<float>(eval->whiteWinPercent() / 100.0) : 0.5f, 0.0f, 1.0f);
+    // The share shown last frame lives in the window's state storage; it eases towards the target.
+    float& shown = *ImGui::GetStateStorage()->GetFloatRef(ImGui::GetID("##evalbar"), -1.0f);
+    if (!animate || shown < 0.0f) {
+        shown = target;
+    } else {
+        shown += (target - shown) * (1.0f - std::exp(-ImGui::GetIO().DeltaTime * 10.0f));
+        if (std::abs(target - shown) < 0.001f) shown = target;
+    }
+    const float whiteHeight = shown * size.y;
     const ImVec2 end(origin.x + size.x, origin.y + size.y);
 
     drawList->AddRectFilled(origin, end, black, 3.0f);

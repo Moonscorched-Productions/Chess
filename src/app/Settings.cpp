@@ -162,6 +162,8 @@ Settings Settings::load(const std::filesystem::path& file) {
             readBool(value, settings.showLegalMoves);
         } else if (key == "highlight_last_move") {
             readBool(value, settings.highlightLastMove);
+        } else if (key == "animations") {
+            readBool(value, settings.animations);
         } else if (key == "sound_enabled") {
             readBool(value, settings.soundEnabled);
         } else if (key == "sound_volume") {
@@ -207,6 +209,7 @@ bool Settings::save(const std::filesystem::path& file) const {
     out << "show_coordinates=" << (showCoordinates ? 1 : 0) << '\n';
     out << "show_legal_moves=" << (showLegalMoves ? 1 : 0) << '\n';
     out << "highlight_last_move=" << (highlightLastMove ? 1 : 0) << '\n';
+    out << "animations=" << (animations ? 1 : 0) << '\n';
     out << "sound_enabled=" << (soundEnabled ? 1 : 0) << '\n';
     out << "sound_volume=" << soundVolume << '\n';
     return static_cast<bool>(out.flush());

@@ -20,6 +20,11 @@ constexpr ImU32 kCheckTint = IM_COL32(220, 30, 30, 170);
 constexpr ImU32 kHintColor = IM_COL32(20, 85, 30, 120);
 constexpr ImU32 kHoverTint = IM_COL32(20, 85, 30, 70);
 
+// Piece animations: how long a move takes to play out, and the most squares that may change
+// at once before the board just shows the new position (e.g. loading another game).
+constexpr double kAnimationSeconds = 0.18;
+constexpr std::size_t kMaxAnimatedChanges = 24;
+
 constexpr std::array<core::PieceType, 4> kPromotionChoices = {core::PieceType::Queen, core::PieceType::Knight,
                                                               core::PieceType::Rook, core::PieceType::Bishop};
 
@@ -84,6 +89,14 @@ char pieceLetter(core::Piece piece) {
 
 bool isLightSquare(Square sq) { return ((core::fileOf(sq) + core::rankOf(sq)) & 1) != 0; }
 
+int squaredDistance(Square a, Square b) {
+    const int df = core::fileOf(a) - core::fileOf(b);
+    const int dr = core::rankOf(a) - core::rankOf(b);
+    return df * df + dr * dr;
+}
+
+ImU32 withAlpha(float alpha) { return IM_COL32(255, 255, 255, static_cast<int>(std::clamp(alpha, 0.0f, 1.0f) * 255.0f)); }
+
 // Squares of the promotion picker: starts on the promotion square and runs towards the pawn's own side.
 std::array<Square, 4> promotionSquares(Square to) {
     const int step = core::rankOf(to) == 7 ? -8 : 8;
@@ -109,6 +122,44 @@ void drawPiece(ImDrawList* drawList, const app::Assets& assets, core::Piece piec
     const ImVec2 textSize = ImGui::GetFont()->CalcTextSizeA(fontSize, 1000.0f, 0.0f, text);
     drawList->AddText(ImGui::GetFont(), fontSize, ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f),
                       white ? IM_COL32(30, 30, 30, 255) : IM_COL32(235, 235, 235, 255), text);
+}
+
+// Works out how the pieces of `before` get to `after`: each piece that appears on a square comes
+// from the nearest square where the same piece disappeared; what is left over fades in or out.
+// This covers moves, captures, castling, en passant, undo and jumps over several moves alike.
+void BoardView::startAnimation(const std::array<core::Piece, 64>& before, const std::array<core::Piece, 64>& after) {
+    animations_.clear();
+    std::vector<Square> gone, came;
+    for (Square square = 0; square < 64; ++square) {
+        if (before[square] == after[square]) continue;
+        if (!before[square].empty()) gone.push_back(square);
+        if (!after[square].empty()) came.push_back(square);
+    }
+    if (gone.size() + came.size() > kMaxAnimatedChanges) return;
+
+    std::vector<bool> used(gone.size(), false);
+    for (const Square to : came) {
+        std::size_t best = gone.size();
+        int bestDistance = 0;
+        for (std::size_t i = 0; i < gone.size(); ++i) {
+            if (used[i] || before[gone[i]] != after[to]) continue;
+            const int distance = squaredDistance(gone[i], to);
+            if (best == gone.size() || distance < bestDistance) {
+                best = i;
+                bestDistance = distance;
+            }
+        }
+        if (best != gone.size()) {
+            used[best] = true;
+            animations_.push_back(PieceAnimation{after[to], gone[best], to});
+        } else {
+            animations_.push_back(PieceAnimation{after[to], core::kNoSquare, to});
+        }
+    }
+    for (std::size_t i = 0; i < gone.size(); ++i) {
+        if (!used[i]) animations_.push_back(PieceAnimation{before[gone[i]], gone[i], core::kNoSquare});
+    }
+    animationStart_ = ImGui::GetTime();
 }
 
 void BoardView::clearAnnotations() {
@@ -203,6 +254,8 @@ std::optional<core::Move> BoardView::draw(const core::Game& game, const app::Ass
             dragging_ = false;
             const Square target = layout.squareAt(mouse);
             if (target != core::kNoSquare && target != selected_ && isTarget(target)) {
+                // The piece was carried there by hand: no need to animate it.
+                dropFrame_ = ImGui::GetFrameCount();
                 tryMove(selected_, target);
             } else if (target == selected_ && deselectOnRelease_) {
                 selected_ = core::kNoSquare;
@@ -298,12 +351,62 @@ std::optional<core::Move> BoardView::draw(const core::Game& game, const app::Ass
 
     const bool showDrag = dragging_ && selected_ != core::kNoSquare && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3.0f);
 
+    // Start an animation when the position differs from the one drawn last frame.
+    std::array<core::Piece, 64> current{};
+    for (Square square = 0; square < 64; ++square) current[square] = game.pieceAt(square);
+    const bool dropped = ImGui::GetFrameCount() - dropFrame_ <= 2;
+    if (!options.animate || options.hidePieces || !hasShown_ || shownFlipped_ != options.flipped) {
+        animations_.clear();
+    } else if (current != shown_) {
+        if (dropped) {
+            animations_.clear();
+            dropFrame_ = -100;
+        } else {
+            startAnimation(shown_, current);
+        }
+    }
+    shown_ = current;
+    hasShown_ = true;
+    shownFlipped_ = options.flipped;
+
+    float progress = 1.0f;  // eased, 0 at the start of the animation and 1 at its end
+    if (!animations_.empty()) {
+        const float t = static_cast<float>((ImGui::GetTime() - animationStart_) / kAnimationSeconds);
+        if (t >= 1.0f) {
+            animations_.clear();
+        } else {
+            const float rest = 1.0f - std::max(t, 0.0f);
+            progress = 1.0f - rest * rest * rest;  // ease out
+        }
+    }
+    const auto arriving = [&](Square square) {
+        return std::any_of(animations_.begin(), animations_.end(),
+                           [square](const PieceAnimation& a) { return a.to == square; });
+    };
+
     for (Square square = 0; square < 64; ++square) {
         const core::Piece piece = game.pieceAt(square);
         if (piece.empty() || options.hidePieces) continue;
         if (showDrag && square == selected_) continue;
         if (promotionPending && square == promotionFrom_) continue;
+        if (arriving(square)) continue;  // drawn below, on its way
         drawPiece(drawList, assets, piece, layout.topLeft(square), sq);
+    }
+    // Pieces leaving the board fade out underneath the ones moving in.
+    for (const PieceAnimation& animation : animations_) {
+        if (animation.to != core::kNoSquare) continue;
+        drawPiece(drawList, assets, animation.piece, layout.topLeft(animation.from), sq, withAlpha(1.0f - progress));
+    }
+    for (const PieceAnimation& animation : animations_) {
+        if (animation.to == core::kNoSquare) continue;
+        const ImVec2 to = layout.topLeft(animation.to);
+        if (animation.from == core::kNoSquare) {
+            drawPiece(drawList, assets, animation.piece, to, sq, withAlpha(progress));
+        } else {
+            const ImVec2 from = layout.topLeft(animation.from);
+            const ImVec2 at(from.x + (to.x - from.x) * progress, from.y + (to.y - from.y) * progress);
+            drawPiece(drawList, assets, animation.piece, at, sq);
+        }
     }
 
     if (options.showLegalMoves) {

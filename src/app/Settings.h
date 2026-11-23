@@ -70,6 +70,7 @@ struct Settings {
     bool showCoordinates = true;
     bool showLegalMoves = true;
     bool highlightLastMove = true;
+    bool animations = true;  // pieces slide, captures fade, the evaluation bar glides
 
     // Sound
     bool soundEnabled = true;

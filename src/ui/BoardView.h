@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <optional>
 #include <vector>
 
@@ -44,6 +45,7 @@ struct BoardOptions {
     std::vector<core::Square> highlights;  // squares to point out, e.g. a hint
     std::vector<SquareTint> tints;         // drawn on the squares, below the pieces
     bool hidePieces = false;               // blindfold: the pieces are there but not drawn
+    bool animate = true;                   // slide pieces to their new squares when the position changes
 };
 
 // Draws a position and turns mouse input into move requests.
@@ -61,6 +63,23 @@ public:
     void clearAnnotations();
 
 private:
+    // A piece in motion between two positions. `from` = kNoSquare: it appears on `to`;
+    // `to` = kNoSquare: it disappears from `from`.
+    struct PieceAnimation {
+        core::Piece piece;
+        core::Square from = core::kNoSquare;
+        core::Square to = core::kNoSquare;
+    };
+    void startAnimation(const std::array<core::Piece, 64>& before, const std::array<core::Piece, 64>& after);
+
+    // The position drawn last frame, to see what changed.
+    std::array<core::Piece, 64> shown_{};
+    bool hasShown_ = false;
+    bool shownFlipped_ = false;
+    std::vector<PieceAnimation> animations_;
+    double animationStart_ = 0.0;
+    int dropFrame_ = -100;  // frame of the last drag-and-drop move: that piece is already in place
+
     core::Square selected_ = core::kNoSquare;
     bool dragging_ = false;
     bool deselectOnRelease_ = false;

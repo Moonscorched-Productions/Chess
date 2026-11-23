@@ -213,6 +213,8 @@ SettingsScreen::Changes SettingsScreen::draw() {
     changes.any |= ImGui::Checkbox("##hints", &s.showLegalMoves);
     row("Highlight last move");
     changes.any |= ImGui::Checkbox("##lastmove", &s.highlightLastMove);
+    row("Animations");
+    changes.any |= ImGui::Checkbox("##animations", &s.animations);
 
     // --- Sound ----------------------------------------------------------------
     ImGui::Spacing();

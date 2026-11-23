@@ -515,7 +515,7 @@ void AnalysisScreen::draw() {
     }
 
     ImGui::BeginGroup();
-    drawEvalBar(ImVec2(kEvalBarWidth, boardSize), currentEval(), flipped_);
+    drawEvalBar(ImVec2(kEvalBarWidth, boardSize), currentEval(), flipped_, settings_.animations);
     ImGui::SameLine();
     const std::optional<core::Move> move = board_.draw(position_, assets_, options, boardSize);
     drawEvalGraph(ImVec2(leftWidth, kGraphHeight));

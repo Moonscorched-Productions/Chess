@@ -25,7 +25,7 @@ Play:
   as an arrow. Hints come from a second engine process at full strength, whatever level the
   opponent plays at.
 - Fullscreen with F11 or in Settings.
-- Settings (engine, dark or light mode, board colours, hints, sound) saved to
+- Settings (engine, dark or light mode, board colours, hints, animations, sound) saved to
   `%APPDATA%\ChessDesktop\settings.ini`.
 
 Analysis:

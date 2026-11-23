@@ -35,7 +35,8 @@ std::string formatEval(const core::Eval& eval);
 const char* nagSymbol(int nag);
 
 // Vertical evaluation bar: White's share grows from White's side of the board.
-void drawEvalBar(ImVec2 size, const std::optional<core::Eval>& eval, bool flipped);
+// With `animate`, the bar glides to a new value instead of jumping.
+void drawEvalBar(ImVec2 size, const std::optional<core::Eval>& eval, bool flipped, bool animate = true);
 
 // Starts a modal popup centred on the main window. Returns true while it is open.
 bool beginCenteredModal(const char* title, ImGuiWindowFlags flags = 0);

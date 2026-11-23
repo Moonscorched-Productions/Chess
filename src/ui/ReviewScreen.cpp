@@ -463,7 +463,7 @@ void ReviewScreen::drawGame() {
     }
 
     ImGui::BeginGroup();
-    drawEvalBar(ImVec2(kEvalBarWidth, boardSize), tree.node(current_).eval, flipped_);
+    drawEvalBar(ImVec2(kEvalBarWidth, boardSize), tree.node(current_).eval, flipped_, settings_.animations);
     ImGui::SameLine();
     board_.draw(position_, assets_, options, boardSize);
     const NodeId clicked = drawEvalGraph(tree, current_, ImVec2(leftWidth, kGraphHeight),
