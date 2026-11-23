@@ -178,7 +178,7 @@ Settings.
 | `tests` | Unit tests for the rules, PGN, move classification, game review, statistics, puzzles, spaced repetition, the opening book, the UCI parser and the stores. |
 | `tools` | `ucicheck` (engine check) and `make_badges.py`, which draws the move-quality badges in `data/badges` (needs Python with Pillow; only to regenerate them). |
 | `third_party/chess` | [chess-library](https://github.com/Disservin/chess-library) by Disservin (MIT). |
-| `data` | Piece set, font, sounds, opening names and starter puzzles. The opening tables and puzzles come from [Lichess](https://database.lichess.org) (CC0). The cburnett pieces (by Colin M.L. Burnett, GPLv2+) come from the [lichess](https://github.com/lichess-org/lila) repository and are rasterized from SVG at startup. |
+| `data` | Piece set, sounds, opening names and starter puzzles. The opening tables and puzzles come from [Lichess](https://database.lichess.org) (CC0). The cburnett pieces (by Colin M.L. Burnett, GPLv2+) come from the [lichess](https://github.com/lichess-org/lila) repository and are rasterized from SVG at startup. The sounds are from [Kenney](https://kenney.nl) (CC0). |
 
 ## Shortcuts
 
@@ -194,3 +194,13 @@ Settings.
 | B / hold Space | Play and Puzzles: blindfold on / off, peek at the pieces |
 | Ctrl+N | New game |
 | Right click / right drag | Mark a square / draw an arrow (a left click clears them) |
+
+## License
+
+Copyright (C) 2026 Moonscorched Productions.
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. See `LICENSE`.
+
+Third-party code, data and assets keep their own licenses; see `THIRD_PARTY_NOTICES.md`.

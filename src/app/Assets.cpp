@@ -103,7 +103,7 @@ std::string Assets::load(const std::filesystem::path& dataDir) {
         (void)badges_.generateMipmap();
     }
 
-    const char* files[] = {"move.mp3", "capture.mp3", "mate.mp3"};
+    const char* files[] = {"move.ogg", "capture.ogg", "mate.ogg"};
     for (std::size_t i = 0; i < buffers_.size(); ++i) {
         sounds_[i].reset();
         if (!dataDir.empty() && buffers_[i].loadFromFile(dataDir / "sfx" / files[i])) {
