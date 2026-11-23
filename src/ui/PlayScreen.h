@@ -6,12 +6,15 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <vector>
 
+#include "app/GameAnalyzer.h"
 #include "app/RichPresence.h"
 #include "app/Settings.h"
 #include "chess/Endgames.h"
 #include "chess/Game.h"
 #include "chess/GameTree.h"
+#include "chess/Review.h"
 #include "engine/UciEngine.h"
 #include "ui/BoardView.h"
 
@@ -93,10 +96,16 @@ private:
     void playSoundForLastMove();
     void undo();
     void redo();
-    void offerDraw();
+    void markDraw();
     core::GameRecord currentRecord() const;
     void saveFinishedGame();
     void checkChallenge();
+    void updatePlayTime();
+
+    // Move badges: keeps badgeTree_ in step with the game and the analyzer working on it.
+    void syncBadges();
+    // Quality of the move at `index` of the game's history (None while it is not judged yet).
+    core::MoveQuality badgeQuality(std::size_t index) const;
 
     bool engineToMove() const;
     bool humanCanMove() const;
@@ -177,6 +186,16 @@ private:
         std::array<char, 128> fen{};
         std::string error;
     } draft_;
+
+    // Move badges while playing: the game as a tree that a background engine evaluates.
+    core::GameTree badgeTree_;
+    std::vector<core::NodeId> badgeLine_;  // badgeTree_ node for each move of the history
+    app::GameAnalyzer badgeAnalyzer_;
+    bool badgesOn_ = false;
+
+    // Time spent on the current game (counted from the first move until it ends).
+    double playSeconds_ = 0.0;
+    Clock::time_point lastTick_{};
 
     bool autoplay_ = false;
     Clock::time_point autoplayAt_{};

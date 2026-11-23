@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS games (
     moves      INTEGER NOT NULL DEFAULT 0,
     source     TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    pgn        TEXT NOT NULL
+    pgn        TEXT NOT NULL,
+    seconds    INTEGER NOT NULL DEFAULT 0  -- time spent playing it in Play, 0 = unknown
 );
 CREATE INDEX IF NOT EXISTS games_white ON games(white);
 CREATE INDEX IF NOT EXISTS games_black ON games(black);
@@ -73,7 +74,28 @@ std::unique_ptr<GameStore> GameStore::open(const std::filesystem::path& file, st
         if (error != nullptr) *error = "Could not prepare the game database: " + store->impl_->message();
         return nullptr;
     }
+    // Added after the first release: databases created before then lack the column.
+    // (Fails harmlessly when the column is already there.)
+    store->impl_->exec("ALTER TABLE games ADD COLUMN seconds INTEGER NOT NULL DEFAULT 0;");
     return store;
+}
+
+bool GameStore::setPlaySeconds(GameId id, std::int64_t seconds) {
+    Statement statement(*impl_->connection, "UPDATE games SET seconds=?1 WHERE id=?2");
+    if (!statement.valid()) return false;
+    statement.bind(1, seconds);
+    statement.bind(2, id);
+    statement.step();
+    return statement.done() && impl_->connection->changes() > 0;
+}
+
+PlayTime GameStore::playTime() const {
+    PlayTime total;
+    Statement statement(*impl_->connection, "SELECT COUNT(*), COALESCE(SUM(seconds), 0) FROM games WHERE seconds > 0");
+    if (!statement.valid() || !statement.step()) return total;
+    total.games = static_cast<int>(statement.integer(0));
+    total.seconds = statement.integer(1);
+    return total;
 }
 
 

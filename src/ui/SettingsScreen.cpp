@@ -141,6 +141,10 @@ SettingsScreen::Changes SettingsScreen::draw() {
     }
     row("Best move arrow");
     changes.any |= ImGui::Checkbox("##arrow", &s.showBestMoveArrow);
+    row("Move badges in Play");
+    changes.any |= ImGui::Checkbox("##playbadges", &s.playMoveBadges);
+    ImGui::SameLine();
+    ImGui::TextDisabled("Judges every move while you play (Best, Mistake, ...).");
     row("Comparison engine");
     changes.any |= textField("##comparepath", "Path to a second UCI engine (optional)", comparePath_, s.compareEnginePath);
     ImGui::SetItemTooltip("Analysis shows this engine's evaluation and line next to the main engine's");

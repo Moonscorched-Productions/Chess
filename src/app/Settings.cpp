@@ -142,6 +142,8 @@ Settings Settings::load(const std::filesystem::path& file) {
             readBool(value, settings.fullscreen);
         } else if (key == "blindfold") {
             readBool(value, settings.blindfold);
+        } else if (key == "play_move_badges") {
+            readBool(value, settings.playMoveBadges);
         } else if (key == "player_names") {
             settings.playerNames = std::string(value);
         } else if (key == "light_mode") {
@@ -206,6 +208,7 @@ bool Settings::save(const std::filesystem::path& file) const {
     out << "compare_engines=" << (compareEngines ? 1 : 0) << '\n';
     out << "fullscreen=" << (fullscreen ? 1 : 0) << '\n';
     out << "blindfold=" << (blindfold ? 1 : 0) << '\n';
+    out << "play_move_badges=" << (playMoveBadges ? 1 : 0) << '\n';
     out << "player_names=" << playerNames << '\n';
     out << "light_mode=" << (lightMode ? 1 : 0) << '\n';
     out << "play_as=" << (playAs == ColorChoice::Black ? "black" : playAs == ColorChoice::Random ? "random" : "white") << '\n';

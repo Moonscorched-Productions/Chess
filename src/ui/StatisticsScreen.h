@@ -8,6 +8,7 @@
 
 #include "app/Settings.h"
 #include "chess/Statistics.h"
+#include "storage/GameStore.h"
 #include "storage/ReviewStore.h"
 
 namespace ui {
@@ -15,8 +16,8 @@ namespace ui {
 // The Statistics section: what the reviewed games say about the user's play.
 class StatisticsScreen {
 public:
-    // `reviews` may be null when the database could not be opened.
-    StatisticsScreen(app::Settings& settings, storage::ReviewStore* reviews);
+    // The stores may be null when the database could not be opened.
+    StatisticsScreen(app::Settings& settings, storage::ReviewStore* reviews, storage::GameStore* games = nullptr);
 
     // Draws the section into the current ImGui window.
     void draw();
@@ -39,6 +40,8 @@ private:
 
     app::Settings& settings_;
     storage::ReviewStore* reviews_;
+    storage::GameStore* gameStore_;
+    storage::PlayTime playTime_;
     std::vector<core::PlayerGame> games_;
     core::PlayerStats stats_;
     bool dirty_ = true;

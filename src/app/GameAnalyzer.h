@@ -40,6 +40,10 @@ public:
     // The tree must stay alive and keep its nodes until the work is done or stop() is called.
     // Returns false if there is nothing to do or the engine could not be started (see error()).
     bool start(core::GameTree& tree);
+    // For a game that is still being played: the first call starts like start(), later calls
+    // with the same tree queue the positions added since. The engine stays alive while idle,
+    // until stop(). Returns false if there is nothing to do or the engine could not be started.
+    bool follow(core::GameTree& tree);
     // Abandons the work and releases the engine.
     void stop();
     // Processes engine output and starts the next search. Call once per frame.
@@ -54,6 +58,8 @@ public:
 
 private:
     void handleInfo(const engine::SearchInfo& info);
+    // Positions of the main line that still need an evaluation or the engine's move.
+    static std::vector<core::NodeId> pendingWork(core::GameTree& tree);
 
     const Settings& settings_;
     engine::UciEngine engine_;
@@ -63,6 +69,8 @@ private:
     int searchId_ = 0;
     int searchDepth_ = 0;  // deepest result of the current search
     bool finished_ = false;
+    bool keepAlive_ = false;  // follow(): wait for more work instead of stopping
+    bool idle_ = false;
     std::string error_;
 };
 

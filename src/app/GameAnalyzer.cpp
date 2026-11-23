@@ -74,24 +74,31 @@ core::Eval evalFromInfo(const engine::SearchInfo& info, bool whiteToMove) {
 
 GameAnalyzer::GameAnalyzer(const Settings& settings) : settings_(settings) {}
 
-bool GameAnalyzer::start(core::GameTree& tree) {
-    stop();
-    error_.clear();
-    finished_ = false;
-    queue_.clear();
-    index_ = 0;
-
+std::vector<core::NodeId> GameAnalyzer::pendingWork(core::GameTree& tree) {
     core::evaluateFinalPosition(tree);
     std::vector<core::NodeId> nodes{core::kRootNode};
     const std::vector<core::NodeId> mainLine = tree.mainLine();
     nodes.insert(nodes.end(), mainLine.begin(), mainLine.end());
+    std::vector<core::NodeId> work;
     for (std::size_t i = 0; i < nodes.size(); ++i) {
         const core::TreeNode& node = tree.node(nodes[i]);
         // Every position needs an evaluation; all but the last also the engine's move,
         // which decides whether the move played there was the best one.
         const bool needsMove = i + 1 < nodes.size() && node.bestMove.empty();
-        if (!node.eval || needsMove) queue_.push_back(nodes[i]);
+        if (!node.eval || needsMove) work.push_back(nodes[i]);
     }
+    return work;
+}
+
+bool GameAnalyzer::start(core::GameTree& tree) {
+    stop();
+    error_.clear();
+    finished_ = false;
+    keepAlive_ = false;
+    idle_ = false;
+    index_ = 0;
+
+    queue_ = pendingWork(tree);
     if (queue_.empty()) return false;
 
     const std::filesystem::path path = resolveEnginePath(settings_.enginePath);
@@ -108,6 +115,25 @@ bool GameAnalyzer::start(core::GameTree& tree) {
     tree_ = &tree;
     searchId_ = 0;
     return true;
+}
+
+bool GameAnalyzer::follow(core::GameTree& tree) {
+    if (tree_ != &tree) {
+        if (!start(tree)) return false;
+        keepAlive_ = true;
+        return true;
+    }
+    bool added = false;
+    for (const core::NodeId id : pendingWork(tree)) {
+        // The position being searched right now is finished by that search.
+        const bool queued = std::find(queue_.begin() + static_cast<std::ptrdiff_t>(std::min(index_, queue_.size())),
+                                      queue_.end(), id) != queue_.end();
+        if (!queued) {
+            queue_.push_back(id);
+            added = true;
+        }
+    }
+    return added;
 }
 
 void GameAnalyzer::stop() {
@@ -147,10 +173,16 @@ void GameAnalyzer::update() {
 
     while (index_ < queue_.size() && !tree_->contains(queue_[index_])) ++index_;
     if (index_ >= queue_.size()) {
+        if (keepAlive_) {
+            if (!idle_) finished_ = true;
+            idle_ = true;
+            return;
+        }
         stop();
         finished_ = true;
         return;
     }
+    idle_ = false;
     engine::SearchLimits limits;
     // Depth alone is unpredictable (sharp positions can take many seconds), so time caps it.
     limits.depth = settings_.analysisDepth;

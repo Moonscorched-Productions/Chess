@@ -59,6 +59,7 @@ struct Settings {
     bool lightMode = false;
     bool fullscreen = false;
     bool blindfold = false;  // hide the pieces in Play and Puzzles
+    bool playMoveBadges = false;  // judge every move in Play as it is made (Best, Mistake, ...)
 
     // New game defaults
     ColorChoice playAs = ColorChoice::White;

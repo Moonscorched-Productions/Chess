@@ -134,6 +134,8 @@ Options Options::parse(int argc, char** argv) {
             options.fullscreen = true;
         } else if (arg == "--blindfold") {
             options.blindfold = true;
+        } else if (arg == "--badges") {
+            options.moveBadges = true;
         } else if (arg == "--make-puzzles") {
             options.makePuzzles = true;
         } else if (arg == "--overlay" && hasValue) {
@@ -217,6 +219,7 @@ App::App(const Options& options)
     if (options_.lightMode) settings_.lightMode = true;
     if (options_.fullscreen) settings_.fullscreen = true;
     if (options_.blindfold) settings_.blindfold = true;
+    if (options_.moveBadges) settings_.playMoveBadges = true;
     if (!options_.compareEngine.empty()) settings_.compareEnginePath = options_.compareEngine;
     if (!options_.syzygyPath.empty()) settings_.syzygyPath = options_.syzygyPath;
     windowedSize_ = sf::Vector2u{options_.width, options_.height};
@@ -265,7 +268,7 @@ App::App(const Options& options)
     // Opened after the game store: the review queries read its table.
     if (store_) reviewStore_ = storage::ReviewStore::open(databaseFile);
     review_ = std::make_unique<ui::ReviewScreen>(settings_, assets_, store_.get(), reviewStore_.get(), &openingBook_);
-    statistics_ = std::make_unique<ui::StatisticsScreen>(settings_, reviewStore_.get());
+    statistics_ = std::make_unique<ui::StatisticsScreen>(settings_, reviewStore_.get(), store_.get());
     settingsScreen_ = std::make_unique<ui::SettingsScreen>(settings_, assets_, presence_);
 
     if (options_.openSettings) section_ = Section::Settings;
@@ -333,6 +336,7 @@ void App::routeRequests() {
     if (play_->consumeLibraryChanged()) {
         library_->markDirty();
         review_->markDirty();
+        statistics_->markDirty();  // the time played
     }
     if (library_->consumeChanged()) {
         review_->markDirty();

@@ -16,6 +16,7 @@
 #include "chess/Pgn.h"
 #include "storage/GameStore.h"
 #include "ui/Common.h"
+#include "ui/QualityBadge.h"
 
 namespace ui {
 
@@ -52,6 +53,18 @@ int materialBalance(const core::Game& game) {
 const char* colorName(Color color) { return color == Color::White ? "White" : "Black"; }
 
 
+// "4:07" or "1:02:45".
+std::string formatDuration(double seconds) {
+    const long total = static_cast<long>(seconds);
+    char text[32];
+    if (total >= 3600) {
+        std::snprintf(text, sizeof(text), "%ld:%02ld:%02ld", total / 3600, total / 60 % 60, total % 60);
+    } else {
+        std::snprintf(text, sizeof(text), "%ld:%02ld", total / 60, total % 60);
+    }
+    return text;
+}
+
 void copyToBuffer(std::array<char, 128>& buffer, const std::string& text) {
     const std::size_t length = std::min(text.size(), buffer.size() - 1);
     std::memcpy(buffer.data(), text.data(), length);
@@ -61,7 +74,7 @@ void copyToBuffer(std::array<char, 128>& buffer, const std::string& text) {
 }  // namespace
 
 PlayScreen::PlayScreen(app::Settings& settings, app::Assets& assets, storage::GameStore* store)
-    : settings_(settings), assets_(assets), store_(store) {
+    : settings_(settings), assets_(assets), store_(store), badgeAnalyzer_(settings) {
     startNewGame(settings_.playAgainstEngine, settings_.playAs, std::string(core::kStartFen));
 }
 
@@ -217,6 +230,7 @@ void PlayScreen::update() {
     using State = engine::UciEngine::State;
 
     updateHint();
+    updatePlayTime();
 
     for (const engine::EngineEvent& event : engine_.poll()) {
         switch (event.type) {
@@ -282,8 +296,72 @@ void PlayScreen::update() {
         }
     }
 
+    syncBadges();
+    badgeAnalyzer_.update();
+    badgeAnalyzer_.takeFinished();
+
     if (game_.isOver()) saveFinishedGame();
     checkChallenge();
+}
+
+void PlayScreen::updatePlayTime() {
+    const Clock::time_point now = Clock::now();
+    if (lastTick_ != Clock::time_point{} && game_.ply() > 0 && !game_.isOver()) {
+        // A long gap (the machine slept, the window was dragged) counts as one second at most.
+        playSeconds_ += std::min(std::chrono::duration<double>(now - lastTick_).count(), 1.0);
+    }
+    lastTick_ = now;
+}
+
+// --- Move badges -------------------------------------------------------------
+
+void PlayScreen::syncBadges() {
+    const bool turnedOn = settings_.playMoveBadges && !badgesOn_;
+    badgesOn_ = settings_.playMoveBadges;
+    if (!badgesOn_) {
+        badgeAnalyzer_.stop();
+        return;
+    }
+
+    // The tree keeps moves taken back, so undo followed by redo does not lose their evaluations.
+    // A different move replaces the old continuation.
+    const std::vector<core::MoveRecord>& history = game_.history();
+    std::vector<core::NodeId> line = badgeTree_.mainLine();
+    std::size_t common = 0;
+    while (common < line.size() && common < history.size() &&
+           badgeTree_.node(line[common]).record.uci == history[common].uci) {
+        ++common;
+    }
+    bool changed = false;
+    if (common < history.size()) {
+        if (common < line.size()) {
+            badgeAnalyzer_.stop();  // it may be searching a position that is about to go
+            badgeTree_.remove(line[common]);
+        }
+        line.resize(common);
+        core::Game replay;
+        replay.setEnforceDraws(false);
+        core::NodeId current = common == 0 ? core::kRootNode : line.back();
+        if (core::loadPosition(badgeTree_, current, replay)) {
+            for (std::size_t i = common; i < history.size(); ++i) {
+                const core::NodeId next = core::playMove(badgeTree_, current, replay, history[i].move);
+                if (next == core::kNoNode) break;
+                line.push_back(next);
+                current = next;
+            }
+        }
+        changed = true;
+    }
+    line.resize(std::min(line.size(), history.size()));
+    badgeLine_ = std::move(line);
+    if (changed || turnedOn) badgeAnalyzer_.follow(badgeTree_);
+}
+
+core::MoveQuality PlayScreen::badgeQuality(std::size_t index) const {
+    if (!settings_.playMoveBadges || index >= badgeLine_.size() || !badgeTree_.contains(badgeLine_[index])) {
+        return core::MoveQuality::None;
+    }
+    return core::classifyMove(badgeTree_, badgeLine_[index]);
 }
 
 core::GameRecord PlayScreen::currentRecord() const {
@@ -331,6 +409,7 @@ void PlayScreen::saveFinishedGame() {
     } else {
         savedGameId_ = store_->add(record, "play");
     }
+    if (savedGameId_) store_->setPlaySeconds(*savedGameId_, std::max<std::int64_t>(1, std::llround(playSeconds_)));
     savedResult_ = game_.result();
     savedPly_ = game_.ply();
     libraryChanged_ = true;
@@ -440,6 +519,12 @@ void PlayScreen::startNewGame(bool againstEngine, app::ColorChoice playAs, const
     savedPly_ = -1;
     challenge_.reset();
     challengeReported_ = false;
+    playSeconds_ = 0.0;
+
+    badgeAnalyzer_.stop();
+    badgeTree_ = core::GameTree(game_.startFen());
+    badgeLine_.clear();
+    badgesOn_ = false;  // the next update starts the analysis again if badges are on
 
     if (!againstEngine_) return;
     const engine::UciEngine::State state = engine_.state();
@@ -491,24 +576,13 @@ void PlayScreen::redo() {
     board_.clearInteraction();
 }
 
-void PlayScreen::offerDraw() {
+void PlayScreen::markDraw() {
     if (game_.isOver()) return;
-    if (!againstEngine_) {
-        game_.agreeDraw();
-        return;
-    }
-    // The engine accepts when it is clearly worse, or when a long game is level.
-    const bool known = engineScoreCp_.has_value();
-    const int score = engineScoreCp_.value_or(0);
-    const bool accept = known && (score <= -80 || (game_.ply() >= 60 && score <= 20));
-    if (accept) {
-        cancelEngineMove();
-        game_.agreeDraw();
-        notice_ = "Draw offer accepted.";
-        playSoundForLastMove();
-    } else {
-        notice_ = "Draw offer declined.";
-    }
+    cancelEngineMove();
+    game_.agreeDraw();
+    notice_ = "Game marked as a draw. Undo takes it back.";
+    playSoundForLastMove();
+    if (settings_.soundEnabled && game_.history().empty()) assets_.play(app::SoundId::GameEnd, settings_.soundVolume);
 }
 
 bool PlayScreen::engineToMove() const {
@@ -540,7 +614,7 @@ std::string PlayScreen::statusText() const {
         case core::Status::DrawRepetition: return "Draw by repetition";
         case core::Status::DrawFiftyMove: return "Draw by the fifty-move rule";
         case core::Status::DrawInsufficientMaterial: return "Draw  \xC2\xB7  insufficient material";
-        case core::Status::DrawAgreed: return "Draw agreed";
+        case core::Status::DrawAgreed: return "Drawn";
         case core::Status::Resigned:
             return std::string(game_.result() == core::Result::WhiteWins ? "Black" : "White") + " resigned  \xC2\xB7  " +
                    winner() + " wins";
@@ -577,6 +651,12 @@ void PlayScreen::draw() {
     // Blindfold: play from the move list alone. The pieces come back when the game is over.
     options.hidePieces = !game_.isOver() && blindfoldHidden(settings_);
     if (options.hidePieces) options.showLegalMoves = false;
+    if (!options.hidePieces && game_.ply() > 0) {
+        const std::size_t lastIndex = game_.history().size() - 1;
+        if (const core::MoveQuality quality = badgeQuality(lastIndex); quality != core::MoveQuality::None) {
+            options.badges.push_back(BoardBadge{game_.history().back().move.to, quality});
+        }
+    }
     if (hintLevel_ > 0 && hintMove_ && humanCanMove()) {
         options.highlights.push_back(hintMove_->from);
         if (hintLevel_ >= 2) options.arrows.push_back(BoardArrow{hintMove_->from, hintMove_->to, kHintArrowColor});
@@ -662,6 +742,12 @@ void PlayScreen::drawSidePanel(float width, float height) {
     ImGui::PushStyleColor(ImGuiCol_Text, over ? kAccentColor : ImGui::GetStyleColorVec4(ImGuiCol_Text));
     ImGui::TextUnformatted(statusText().c_str());
     ImGui::PopStyleColor();
+    if (game_.ply() > 0) {
+        const std::string time = formatDuration(playSeconds_);
+        ImGui::SameLine(std::max(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(time.c_str()).x, ImGui::GetCursorPosX()));
+        ImGui::TextDisabled("%s", time.c_str());
+        ImGui::SetItemTooltip("Time spent on this game");
+    }
 
     if (challenge_) {
         ImGui::PushTextWrapPos(0.0f);
@@ -691,7 +777,7 @@ void PlayScreen::drawSidePanel(float width, float height) {
     ImGui::Separator();
 
     const float rowHeight = ImGui::GetFrameHeightWithSpacing();
-    const float buttonsHeight = rowHeight * 4.0f;
+    const float buttonsHeight = rowHeight * 5.0f;
     const float listHeight = std::max(ImGui::GetContentRegionAvail().y - buttonsHeight - style.ItemSpacing.y, 60.0f);
     drawMoveList(listHeight);
 
@@ -718,8 +804,12 @@ void PlayScreen::drawSidePanel(float width, float height) {
     ImGui::BeginDisabled(over);
     if (ImGui::Button("Resign", size)) wantResignDialog_ = true;
     ImGui::SameLine();
-    if (ImGui::Button(againstEngine_ ? "Offer draw" : "Draw", size)) offerDraw();
+    // In endgame training a draw has to be earned on the board.
+    ImGui::BeginDisabled(challenge_.has_value());
+    if (ImGui::Button("Draw", size)) markDraw();
     ImGui::EndDisabled();
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Mark the game as a draw (Undo takes it back)");
 
     const ImVec2 half = size;
     if (ImGui::Button("Copy FEN", half)) {
@@ -737,6 +827,19 @@ void PlayScreen::drawSidePanel(float width, float height) {
         settingsChanged_ = true;
     }
     ImGui::SetItemTooltip("Hide the pieces and play from memory (B). Hold Space to peek.");
+
+    if (ImGui::Checkbox("Move badges", &settings_.playMoveBadges)) settingsChanged_ = true;
+    ImGui::SetItemTooltip("Judge every move as it is played (Best, Mistake, Blunder, ...)");
+    if (settings_.playMoveBadges) {
+        if (!badgeAnalyzer_.error().empty()) {
+            ImGui::SameLine();
+            ImGui::TextColored(kErrorColor, "Engine unavailable");
+            ImGui::SetItemTooltip("%s", badgeAnalyzer_.error().c_str());
+        } else if (badgeAnalyzer_.running() && badgeAnalyzer_.done() < badgeAnalyzer_.total()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("Judging%s", std::string(static_cast<std::size_t>(ImGui::GetTime() * 3.0) % 4, '.').c_str());
+        }
+    }
 
     if (!over) {
         const bool waiting = hintLevel_ > 0 && !hintMove_ && hintError_.empty();
@@ -792,6 +895,14 @@ void PlayScreen::drawMoveList(float height) {
                 ImGui::TextColored(kAccentColor, "%s", history[index].san.c_str());
             } else {
                 ImGui::TextUnformatted(history[index].san.c_str());
+            }
+            if (const core::MoveQuality quality = badgeQuality(index); quality != core::MoveQuality::None) {
+                ImGui::SameLine(0.0f, 6.0f);
+                const float size = ImGui::GetTextLineHeight();
+                const ImVec2 pos = ImGui::GetCursorScreenPos();
+                drawQualityBadge(ImGui::GetWindowDrawList(), ImVec2(pos.x + size * 0.5f, pos.y + size * 0.5f), size * 0.5f, quality);
+                ImGui::Dummy(ImVec2(size, size));
+                ImGui::SetItemTooltip("%s", core::qualityName(quality));
             }
         }
         ImGui::EndTable();

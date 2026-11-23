@@ -62,6 +62,7 @@ struct Options {
     bool lightMode = false;          // --light: use the light colour scheme
     bool fullscreen = false;         // --fullscreen: start in fullscreen
     bool blindfold = false;          // --blindfold: hide the pieces in Play and Puzzles
+    bool moveBadges = false;         // --badges: judge every move in Play
     bool makePuzzles = false;        // --make-puzzles: make puzzles from the reviewed --pgn game
     int overlay = 0;                 // --overlay <n>: board overlay in Analysis (1 control, 2 loose pieces, 3 activity)
     std::string fen;                 // --fen <fen>: load this position into Analysis

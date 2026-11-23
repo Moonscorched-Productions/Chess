@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <utility>
 
 #include <imgui.h>
@@ -46,8 +47,8 @@ void bar(ImVec2 size, float fraction, ImU32 color) {
 
 }  // namespace
 
-StatisticsScreen::StatisticsScreen(app::Settings& settings, storage::ReviewStore* reviews)
-    : settings_(settings), reviews_(reviews) {
+StatisticsScreen::StatisticsScreen(app::Settings& settings, storage::ReviewStore* reviews, storage::GameStore* games)
+    : settings_(settings), reviews_(reviews), gameStore_(games) {
     const std::size_t length = std::min(settings_.playerNames.size(), names_.size() - 1);
     std::memcpy(names_.data(), settings_.playerNames.data(), length);
     names_[length] = '\0';
@@ -61,7 +62,24 @@ void StatisticsScreen::reload() {
     games_.clear();
     if (reviews_ != nullptr) games_ = reviews_->playerGames(settings_.playerNames);
     stats_ = core::summarize(games_);
+    playTime_ = gameStore_ != nullptr ? gameStore_->playTime() : storage::PlayTime{};
 }
+
+namespace {
+// "3 h 12 min", "12 min", "40 s".
+std::string formatPlayTime(std::int64_t seconds) {
+    char text[48];
+    if (seconds >= 3600) {
+        std::snprintf(text, sizeof(text), "%lld h %lld min", static_cast<long long>(seconds / 3600),
+                      static_cast<long long>(seconds / 60 % 60));
+    } else if (seconds >= 60) {
+        std::snprintf(text, sizeof(text), "%lld min", static_cast<long long>(seconds / 60));
+    } else {
+        std::snprintf(text, sizeof(text), "%lld s", static_cast<long long>(seconds));
+    }
+    return text;
+}
+}  // namespace
 
 void StatisticsScreen::draw() {
     ImGui::TextUnformatted("Statistics");
@@ -78,6 +96,11 @@ void StatisticsScreen::draw() {
     ImGui::BeginChild("##statistics", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
     if (stats_.games == 0) {
         ImGui::PushTextWrapPos(std::min(ImGui::GetContentRegionAvail().x, 720.0f));
+        if (playTime_.games > 0) {
+            ImGui::Text("Time played: %s over %d %s", formatPlayTime(playTime_.seconds).c_str(), playTime_.games,
+                        playTime_.games == 1 ? "game" : "games");
+            ImGui::Spacing();
+        }
         ImGui::TextUnformatted("No reviewed games of yours yet.");
         ImGui::TextDisabled("Statistics are built from the games you review in Game Review. Games you play here "
                             "count automatically; for imported games, enter the names you play under below.");
@@ -121,7 +144,7 @@ void StatisticsScreen::draw() {
 
 void StatisticsScreen::drawTiles() {
     const ImGuiStyle& style = ImGui::GetStyle();
-    const float width = (ImGui::GetContentRegionAvail().x - 3.0f * style.ItemSpacing.x) / 4.0f;
+    const float width = (ImGui::GetContentRegionAvail().x - 4.0f * style.ItemSpacing.x) / 5.0f;
     char value[32];
     char detail[96];
 
@@ -151,6 +174,16 @@ void StatisticsScreen::drawTiles() {
     };
     colorTile("##tile-white", "Accuracy as White", stats_.white);
     colorTile("##tile-black", "Accuracy as Black", stats_.black);
+
+    ImGui::SameLine();
+    if (playTime_.games == 0) {
+        tile("##tile-time", width, "Time played", "-", "no timed games yet");
+    } else {
+        const std::string total = formatPlayTime(playTime_.seconds);
+        std::snprintf(detail, sizeof(detail), "%d %s  \xC2\xB7  %s per game", playTime_.games,
+                      playTime_.games == 1 ? "game" : "games", formatPlayTime(playTime_.seconds / playTime_.games).c_str());
+        tile("##tile-time", width, "Time played", total.c_str(), detail);
+    }
 }
 
 // One point per game on a scale that always includes 100, with the average as a line.

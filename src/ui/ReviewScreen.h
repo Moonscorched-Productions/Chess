@@ -74,7 +74,8 @@ private:
     void finishReview();
     void startPuzzles();
     void closeGame();
-    void goTo(core::NodeId id);
+    // Shows a position; `sound` plays the sound of the move that led there.
+    void goTo(core::NodeId id, bool sound = true);
     void refreshCurrent();
     void stepMoment(int direction);
     core::MoveQuality qualityOf(core::NodeId id) const;

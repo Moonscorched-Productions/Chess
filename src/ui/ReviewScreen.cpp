@@ -86,7 +86,7 @@ void ReviewScreen::load(core::GameRecord record, std::optional<storage::GameId> 
     // Show the board from the user's side when the game names them as Black.
     flipped_ = core::matchesPlayer(record_->tag("Black"), settings_.playerNames) &&
                !core::matchesPlayer(record_->tag("White"), settings_.playerNames);
-    goTo(kRootNode);
+    goTo(kRootNode, false);
 
     if (tree.moveCount() == 0) {
         notice_ = "This game has no moves to review.";
@@ -252,9 +252,10 @@ std::string ReviewScreen::moveLabel(NodeId id) const {
     return std::to_string(tree.moveNumber(id)) + (tree.mover(id) == Color::White ? ". " : "... ") + tree.node(id).record.san;
 }
 
-void ReviewScreen::goTo(NodeId id) {
+void ReviewScreen::goTo(NodeId id, bool sound) {
     if (!record_) return;
     if (!record_->tree.contains(id)) id = kRootNode;
+    const bool moved = id != current_;
     current_ = id;
     if (!core::loadPosition(record_->tree, current_, position_)) {
         current_ = kRootNode;
@@ -264,6 +265,15 @@ void ReviewScreen::goTo(NodeId id) {
     board_.clearAnnotations();
     treeView_.scrollToCurrent();
     refreshCurrent();
+
+    // Like a board being replayed: the sound of the move that led to the new position.
+    if (sound && moved && settings_.soundEnabled && current_ != kRootNode) {
+        const core::MoveRecord& record = record_->tree.node(current_).record;
+        const app::SoundId soundId = position_.isOver()          ? app::SoundId::GameEnd
+                                     : !record.captured.empty() ? app::SoundId::Capture
+                                                                : app::SoundId::Move;
+        assets_.play(soundId, settings_.soundVolume);
+    }
 }
 
 void ReviewScreen::goToPly(int ply) {

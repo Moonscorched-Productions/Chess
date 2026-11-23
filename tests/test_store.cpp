@@ -107,6 +107,47 @@ TEST_CASE("game store: add, list, read, update, remove") {
     }
 }
 
+TEST_CASE("game store: play time") {
+    std::string error;
+    const auto store = GameStore::open(":memory:", &error);
+    REQUIRE_MESSAGE(store != nullptr, error);
+    CHECK(store->playTime().games == 0);
+    CHECK(store->playTime().seconds == 0);
+
+    const auto first = store->add(game("You", "Engine", "1-0", "1. e4 e5"), "play");
+    const auto second = store->add(game("Engine", "You", "0-1", "1. d4 d5"), "play");
+    store->add(game("A", "B", "1-0", "1. c4"), "import");  // no time: not counted
+    REQUIRE(first.has_value());
+    REQUIRE(second.has_value());
+    CHECK(store->setPlaySeconds(*first, 300));
+    CHECK(store->setPlaySeconds(*second, 120));
+    CHECK(store->setPlaySeconds(*second, 150));  // replaced, not added
+    CHECK_FALSE(store->setPlaySeconds(9999, 10));
+
+    const PlayTime total = store->playTime();
+    CHECK(total.games == 2);
+    CHECK(total.seconds == 450);
+
+    store->remove(*first);
+    CHECK(store->playTime().seconds == 150);
+}
+
+TEST_CASE("game store: reopening an existing database keeps play times") {
+    TempDir dir;
+    const auto file = dir.path / "games.sqlite";
+    {
+        const auto store = GameStore::open(file);
+        REQUIRE(store != nullptr);
+        const auto id = store->add(game("You", "Engine", "1-0", "1. e4 e5"), "play");
+        REQUIRE(id.has_value());
+        CHECK(store->setPlaySeconds(*id, 42));
+    }
+    const auto store = GameStore::open(file);
+    REQUIRE(store != nullptr);
+    CHECK(store->count() == 1);
+    CHECK(store->playTime().seconds == 42);
+}
+
 TEST_CASE("game store: import and export files") {
     TempDir temp;
     const std::filesystem::path source = temp.path / "games.pgn";

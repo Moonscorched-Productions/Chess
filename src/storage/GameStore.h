@@ -33,6 +33,12 @@ struct GameFilter {
     int limit = 500;
 };
 
+// Time spent on the games played in the Play section.
+struct PlayTime {
+    int games = 0;              // games with a recorded time
+    std::int64_t seconds = 0;
+};
+
 struct ImportResult {
     int imported = 0;
     int skipped = 0;  // games that could not be read
@@ -56,6 +62,10 @@ public:
     // Replaces the stored game `id`.
     bool update(GameId id, const core::GameRecord& record);
     bool remove(GameId id);
+    // Records how long the game `id` took to play.
+    bool setPlaySeconds(GameId id, std::int64_t seconds);
+    // Total time over all games with a recorded play time.
+    PlayTime playTime() const;
 
     // Newest games first.
     std::vector<GameSummary> list(const GameFilter& filter = {}) const;
