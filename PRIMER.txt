@@ -1,0 +1,534 @@
+Chess Desktop — Product Features & Requirements
+1. Project Overview
+
+A native, offline-first chess desktop application built with C++.
+
+The application is designed as a personal chess workstation combining:
+
+Playing against computer opponents.
+Chess position analysis.
+Game review and statistics.
+Tactical puzzle training.
+Opening preparation and repertoire management.
+Personal chess game database.
+
+The application is exclusively single-player. There are no multiplayer features, online accounts, matchmaking, chat, or social functionality.
+
+Internet access is optional and only used for downloading chess-related content such as puzzles, opening databases, and game collections.
+
+Core Principles
+Native desktop performance.
+Fast startup and low resource consumption.
+Offline-first architecture.
+Clean, minimal and customizable interface.
+Modular and maintainable C++ architecture.
+Separation between chess logic, rendering, engine communication and application features.
+All personal data stored locally.
+No unnecessary dependencies or complicated infrastructure.
+2. Technology Stack
+Component	Technology
+Programming language	C++20 or newer
+Graphics and windowing	SFML
+UI framework	Dear ImGui
+ImGui integration	ImGui-SFML
+Chess engine	Stockfish
+Chess rules library	chess-library (Disservin) or equivalent
+Database	SQLite
+Build system	CMake
+Engine communication	UCI protocol
+Game format	PGN
+Position format	FEN
+
+Stockfish should initially run as a separate process and communicate with the application through UCI.
+
+Engine communication must be asynchronous and must never block the main rendering thread.
+
+3. Main Application Sections
+
+The application should have the following main sections:
+
+Play
+Analysis
+Game Review
+Puzzles
+Opening Preparation
+Game Library
+Statistics
+Settings
+4. Playing Against Bots
+4.1 Basic Gameplay
+Fully functional chessboard.
+Legal move validation.
+Move highlighting.
+Last move highlighting.
+Check indication.
+Checkmate and stalemate detection.
+Castling.
+En passant.
+Pawn promotion.
+Draw detection.
+Undo and redo.
+Restart game.
+Flip board.
+Move history.
+Captured pieces display.
+Resign and offer draw against the bot.
+4.2 Computer Opponents
+
+Use Stockfish as the primary chess engine.
+
+Features:
+
+Multiple difficulty levels.
+Configurable engine strength.
+Adjustable search depth.
+Configurable thinking time.
+Custom time controls.
+Play as White or Black.
+Randomized opening selection.
+Handicap games.
+Play from custom FEN positions.
+
+The engine should support different skill configurations without requiring multiple installed engines.
+
+4.3 Game Settings
+Time controls.
+Increment and delay.
+Engine difficulty.
+Board orientation.
+Sound effects.
+Move confirmation options.
+5. Chess Analysis
+
+A dedicated analysis interface for studying positions and variations.
+
+5.1 Engine Analysis
+Continuous position analysis.
+Evaluation score.
+Evaluation bar.
+Search depth.
+Nodes searched.
+Nodes per second.
+Principal variation.
+Multi-PV analysis.
+Configurable engine time and depth.
+Best move suggestions.
+Alternative move suggestions.
+Threat identification.
+5.2 Variation Explorer
+Create alternative variations.
+Navigate variations.
+Compare candidate moves.
+Delete variations.
+Promote variations to the main line.
+Add comments and annotations.
+Draw arrows and highlight squares.
+Explore arbitrary positions.
+5.3 Evaluation Graph
+Display evaluation throughout a game.
+Navigate to positions through the graph.
+Highlight major evaluation changes.
+Identify critical positions.
+Show evaluation for each move.
+5.4 Additional Analysis Tools
+Infinite analysis.
+Position comparison.
+Copy FEN.
+Copy PGN.
+Opening identification.
+Search for similar positions in the game library.
+Optional support for additional UCI-compatible engines.
+6. Game Review
+
+Automatically analyse completed games and identify mistakes.
+
+6.1 Move Classification
+
+Classify moves into categories:
+
+Best move.
+Excellent move.
+Good move.
+Inaccuracy.
+Mistake.
+Blunder.
+
+Classification should be based on engine evaluation changes and configurable thresholds.
+
+6.2 Game Statistics
+Accuracy percentage.
+Number of mistakes.
+Number of blunders.
+Number of inaccuracies.
+Average centipawn loss.
+Best moves.
+Critical moments.
+Missed tactical opportunities.
+6.3 Review Interface
+Navigate through the game.
+Highlight mistakes on the board.
+Display the engine's recommended move.
+Compare the played move with the best move.
+Show alternative continuations.
+Display evaluation changes.
+Add personal comments.
+Save reviewed games.
+6.4 Personalized Insights
+
+Identify recurring weaknesses, such as:
+
+Missed forks.
+Poor king safety.
+Tactical oversights.
+Weak endgame decisions.
+Opening mistakes.
+Poor piece coordination.
+
+Generate improvement suggestions based on the user's game history.
+
+7. Puzzle System
+
+A dedicated tactical training section.
+
+7.1 Puzzle Sources
+Import puzzles from external databases.
+Support the Lichess puzzle database.
+Import custom puzzle collections.
+Create puzzles manually from FEN positions.
+Generate puzzles from imported games.
+
+External content should be downloadable and stored locally.
+
+7.2 Puzzle Features
+Puzzle rating.
+Puzzle themes.
+Difficulty selection.
+Timed puzzles.
+Daily puzzle.
+Puzzle streaks.
+Puzzle history.
+Track solved and failed puzzles.
+Retry failed puzzles.
+Show solution and explanation.
+Track personal puzzle rating.
+7.3 Puzzle Themes
+Forks.
+Pins.
+Skewers.
+Discovered attacks.
+Double attacks.
+Deflections.
+Sacrifices.
+Checkmate patterns.
+Back-rank tactics.
+Endgame tactics.
+Defensive moves.
+7.4 Automatic Puzzle Generation
+
+Analyse games and positions with Stockfish.
+
+Identify positions containing tactical opportunities and generate puzzles from them.
+
+Generated puzzles should:
+
+Have a verified solution.
+Have legal move sequences.
+Have a sufficiently clear winning continuation.
+Include difficulty estimates.
+Include tactical theme classifications.
+Be stored in the local puzzle database.
+8. Opening Preparation
+
+A dedicated system for creating and studying opening repertoires.
+
+8.1 Repertoire Management
+Create multiple repertoires.
+Separate White and Black repertoires.
+Add opening variations.
+Create branching move trees.
+Add comments and annotations.
+Organize variations into folders.
+Import opening repertoires.
+Export repertoires.
+Identify opening names and variations.
+8.2 Opening Explorer
+Explore opening variations.
+Display move frequencies.
+Display opening statistics when database data is available.
+Browse opening trees.
+Explore transpositions.
+Search positions.
+Display common continuations.
+8.3 Opening Training
+Practice repertoire moves.
+Test opening memorization.
+Hide the correct continuation.
+Ask the user to find the next move.
+Track memorization accuracy.
+Identify forgotten variations.
+Schedule repetition of difficult lines.
+Support spaced repetition.
+9. Endgame Training
+
+A dedicated endgame learning section.
+
+Features:
+
+King and pawn endgames.
+Rook endgames.
+Queen endgames.
+Minor piece endgames.
+Basic checkmate positions.
+Opposition training.
+Pawn promotion training.
+Endgame technique exercises.
+Play endgame positions against Stockfish.
+
+Optional integration with Syzygy endgame tablebases.
+
+Tablebase features:
+
+Win/draw/loss evaluation.
+Best move.
+Distance to mate where available.
+Position exploration.
+10. Game Library and Database
+
+A personal offline chess database.
+
+10.1 Game Management
+Import PGN files.
+Export PGN files.
+Save completed games.
+Organize games into collections.
+Add game annotations.
+Add comments.
+Bookmark important positions.
+Edit game metadata.
+Delete games.
+Search and filter games.
+10.2 Search
+
+Search games by:
+
+Player names.
+Opening.
+Result.
+Date.
+Game length.
+Tags.
+Position.
+FEN.
+10.3 Storage
+
+Use SQLite for application metadata, settings, puzzle information and game indexing.
+
+Use PGN as the primary portable game format.
+
+All user data should remain accessible without an internet connection.
+
+11. Statistics and Progress Tracking
+
+Track the user's chess development over time.
+
+11.1 Playing Statistics
+Total games played.
+Wins, losses and draws.
+Results against different bot strengths.
+Performance as White.
+Performance as Black.
+Average game length.
+Average accuracy.
+Mistakes and blunders per game.
+11.2 Training Statistics
+Puzzles solved.
+Puzzle rating progression.
+Puzzle accuracy.
+Most difficult themes.
+Most frequently failed themes.
+Opening memorization progress.
+Endgame training progress.
+Study time.
+11.3 Personal Improvement
+
+Generate reports identifying recurring weaknesses.
+
+Provide suggestions for what the user should study next based on their performance.
+
+All statistics should be calculated locally.
+
+12. Interface and Customization
+12.1 General Design
+
+The application should have a modern, minimal desktop interface.
+
+Design principles:
+
+Dark theme by default.
+Clean typography.
+Minimal visual clutter.
+Responsive layout.
+Consistent spacing.
+Fast interactions.
+Keyboard accessibility.
+Resizable panels.
+Customizable layouts.
+12.2 Chessboard Customization
+Multiple board themes.
+Multiple piece sets.
+Custom square colors.
+Board coordinates.
+Board flipping.
+Adjustable board size.
+Legal move indicators.
+Last move highlighting.
+Check highlighting.
+Custom arrow colors.
+Custom square highlighting.
+12.3 User Experience
+Keyboard shortcuts.
+Sound effects.
+Adjustable animation speed.
+Move animations.
+Drag-and-drop pieces.
+Click-to-move support.
+Confirmation settings.
+Undo and redo.
+Contextual menus.
+Tooltips.
+13. Advanced Features
+
+These are optional features for later development.
+
+13.1 Position Visualization
+Attack maps.
+Square control visualization.
+Piece activity visualization.
+King safety visualization.
+Pawn structure visualization.
+Tactical threat visualization.
+Position heatmaps.
+13.2 Blindfold Chess
+Hide all pieces.
+Display only coordinates.
+Play against Stockfish without visual pieces.
+Solve puzzles blindfolded.
+Reveal the board when requested.
+13.3 Automatic Explanations
+
+Provide explanations for:
+
+Why a move is good.
+Why a move is bad.
+What threats a move creates.
+Why an alternative is stronger.
+What positional weaknesses exist.
+
+This may eventually integrate with an optional local language model.
+
+13.4 Engine Comparison
+Run multiple UCI-compatible engines.
+Compare evaluations.
+Compare suggested moves.
+Compare principal variations.
+Configure engine-specific settings.
+14. Optional Internet Features
+
+The application must work fully offline.
+
+Internet connectivity is only required for optional content retrieval.
+
+Potential integrations:
+
+Lichess puzzle database.
+Opening databases.
+PGN downloads.
+External game imports.
+Engine and application updates.
+
+Downloaded content should be cached locally.
+
+No accounts or online services should be required for normal application usage.
+
+15. Development Priorities
+
+Development should happen incrementally.
+
+Phase 1 — Core Application
+XMake project setup.
+SFML and ImGui integration.
+Main window and navigation.
+Chessboard rendering.
+Chess rules and legal move handling.
+Move history.
+Stockfish integration.
+Play against computer.
+Basic settings.
+
+Goal: A fully playable native chess application.
+
+Phase 2 — Analysis
+Position analysis.
+Evaluation bar.
+Multi-PV.
+Variation exploration.
+Evaluation graph.
+FEN and PGN support.
+Game history.
+
+Goal: A functional chess analysis application.
+
+Phase 3 — Training
+Puzzle database.
+Puzzle interface.
+Puzzle rating.
+Puzzle history.
+Opening repertoires.
+Opening training.
+Endgame training.
+
+Goal: A personal chess training application.
+
+Phase 4 — Game Review
+Automatic game analysis.
+Move classification.
+Accuracy calculation.
+Critical position detection.
+Mistake visualization.
+Personalized statistics.
+
+Goal: A comprehensive personal chess improvement tool.
+
+Phase 5 — Advanced Features
+Puzzle generation.
+Position heatmaps.
+Endgame tablebases.
+Blindfold chess.
+Engine comparison.
+Automatic explanations.
+
+Goal: A complete chess workstation.
+
+16. Important Architectural Requirements
+
+These requirements apply throughout development.
+
+Keep chess rules independent of rendering.
+Keep Stockfish communication independent of the UI.
+Use asynchronous engine communication.
+Avoid blocking the main application thread.
+Keep database operations separate from UI code.
+Use clear interfaces between modules.
+Use RAII and modern C++ practices.
+Prefer strong typing and explicit ownership.
+Handle errors and invalid input safely.
+Add unit tests for chess logic and game parsing.
+Ensure PGN and FEN compatibility.
+Avoid unnecessary dependencies.
+Avoid premature optimization.
+Keep the application fully functional offline.
+Final Product Vision
+
+Build a lightweight, polished, native desktop chess application that combines playing, analysis, training, opening preparation and personal game management.
+
+It should feel like a personal chess laboratory: powerful when needed, simple when not, and completely usable without an internet connection.

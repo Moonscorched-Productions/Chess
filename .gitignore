@@ -1,0 +1,11 @@
+build/
+.xmake/
+.vs/
+.vscode/
+vsxmake*/
+compile_commands.json
+engines/
+imgui.ini
+third_party/discord_game_sdk/
+
+PRIMER.txt
