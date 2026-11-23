@@ -304,10 +304,31 @@ std::optional<core::Move> BoardView::draw(const core::Game& game, const app::Ass
     // --- Drawing -------------------------------------------------------------
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     const float sq = layout.square;
+    // The board's outer corners are rounded; squares in a corner round that corner too.
+    constexpr float kCornerRounding = 6.0f;
+    const float boardEnd = sq * 8.0f;
     const auto fill = [&](Square square, ImU32 color) {
         const ImVec2 p = layout.topLeft(square);
-        drawList->AddRectFilled(p, ImVec2(p.x + sq, p.y + sq), color);
+        const bool left = p.x - layout.origin.x < 0.5f;
+        const bool top = p.y - layout.origin.y < 0.5f;
+        const bool right = p.x + sq - layout.origin.x > boardEnd - 0.5f;
+        const bool bottom = p.y + sq - layout.origin.y > boardEnd - 0.5f;
+        ImDrawFlags corners = ImDrawFlags_RoundCornersNone;
+        if (top && left) corners = ImDrawFlags_RoundCornersTopLeft;
+        if (top && right) corners = ImDrawFlags_RoundCornersTopRight;
+        if (bottom && left) corners = ImDrawFlags_RoundCornersBottomLeft;
+        if (bottom && right) corners = ImDrawFlags_RoundCornersBottomRight;
+        drawList->AddRectFilled(p, ImVec2(p.x + sq, p.y + sq), color, corners == ImDrawFlags_RoundCornersNone ? 0.0f : kCornerRounding,
+                                corners);
     };
+
+    // A soft shadow lifts the board off the background.
+    for (int i = 6; i >= 1; --i) {
+        const float spread = static_cast<float>(i) * 3.0f;
+        drawList->AddRectFilled(ImVec2(layout.origin.x - spread, layout.origin.y - spread + 6.0f),
+                                ImVec2(layout.origin.x + boardEnd + spread, layout.origin.y + boardEnd + spread + 6.0f),
+                                IM_COL32(0, 0, 0, 10), kCornerRounding + spread);
+    }
 
     for (Square square = 0; square < 64; ++square) fill(square, isLightSquare(square) ? options.lightSquare : options.darkSquare);
     for (const SquareTint& tint : options.tints)

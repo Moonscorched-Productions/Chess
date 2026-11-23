@@ -14,6 +14,7 @@
 #include "app/Paths.h"
 #include "chess/Guess.h"
 #include "chess/Pgn.h"
+#include "app/Theme.h"
 #include "ui/Common.h"
 
 namespace ui {
@@ -306,7 +307,9 @@ void GuessScreen::draw() {
 
 void GuessScreen::drawChooser() {
     if (listDirty_) reloadList();
+    ImGui::PushFont(app::titleFont());
     ImGui::TextUnformatted("Guess the Move");
+    ImGui::PopFont();
     ImGui::SameLine();
     ImGui::TextDisabled("Play through a game from one side and find each move.");
     ImGui::Spacing();

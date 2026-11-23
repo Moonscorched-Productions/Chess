@@ -15,10 +15,9 @@ ImU32 toU32(const std::array<float, 3>& color) {
 
 }  // namespace
 
-void setColorScheme(bool light) {
-    // Darker tones keep their contrast on a light background.
-    kErrorColor = light ? ImVec4(0.78f, 0.22f, 0.18f, 1.0f) : ImVec4(0.90f, 0.42f, 0.38f, 1.0f);
-    kAccentColor = light ? ImVec4(0.25f, 0.52f, 0.14f, 1.0f) : ImVec4(0.60f, 0.80f, 0.40f, 1.0f);
+void setColorScheme(ImVec4 accent, ImVec4 error) {
+    kAccentColor = accent;
+    kErrorColor = error;
 }
 
 bool blindfoldHidden(const app::Settings& settings) {

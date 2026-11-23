@@ -15,8 +15,8 @@ namespace ui {
 inline ImVec4 kErrorColor(0.90f, 0.42f, 0.38f, 1.0f);
 inline ImVec4 kAccentColor(0.60f, 0.80f, 0.40f, 1.0f);
 
-// Adapts the colours above to the dark or light application style.
-void setColorScheme(bool light);
+// Sets the colours above for the current theme.
+void setColorScheme(ImVec4 accent, ImVec4 error);
 
 // Engines report a tablebase win as a score of about 200 pawns.
 inline constexpr int kTablebaseScore = 15000;

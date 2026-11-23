@@ -13,6 +13,8 @@
 #include "app/Settings.h"
 #include "chess/GameTree.h"
 #include "chess/Puzzle.h"
+#include <string_view>
+
 #include "storage/PuzzleStore.h"
 #include "ui/BoardView.h"
 
@@ -44,6 +46,11 @@ public:
     bool consumeSettingsChanged();
     app::PresenceText presence() const;
 
+    // Switches the theme filter (a Lichess theme name such as "fork") and loads a puzzle.
+    void practiseTheme(std::string_view theme);
+    // Loads the most overdue puzzle for review, if any.
+    void startReview() { loadDue(); }
+
     // Test aid: the solution is played automatically, puzzle after puzzle.
     void setAutoSolve(bool enabled) { autoSolve_ = enabled; }
 
@@ -53,7 +60,7 @@ private:
 
     void loadNext();
     void loadDaily();
-    void loadFailed();
+    void loadDue();
     bool begin(const core::Puzzle& puzzle, bool rated);
     void onMove(core::Move move);
     void recordOnce(bool solved);
@@ -99,7 +106,7 @@ private:
     std::vector<storage::PuzzleAttempt> history_;
     std::vector<int> ratingHistory_;
     int puzzleCount_ = 0;
-    int failedCount_ = 0;
+    storage::ReviewQueue reviewQueue_;
 
     // Background import.
     std::thread importThread_;

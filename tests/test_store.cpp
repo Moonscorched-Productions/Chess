@@ -5,6 +5,7 @@
 #include <string>
 
 #include "chess/Pgn.h"
+#include "chess/Repertoire.h"
 #include "storage/Explorer.h"
 #include "storage/GameStore.h"
 
@@ -277,15 +278,29 @@ TEST_CASE("puzzle store: import, selection, attempts and rating") {
         CHECK(history[2].seconds == doctest::Approx(12.5));
         CHECK(store->ratingHistory() == std::vector<int>{afterWin, afterLoss});
 
-        // Solved puzzles are not served again; failed ones come back for a retry.
+        // Solved puzzles are not served again; missed ones come back for review the next day.
         PuzzleFilter filter;
         for (std::uint64_t seed = 0; seed < 6; ++seed) CHECK(store->random(filter, seed)->id != "0000D");
-        CHECK(store->failedCount() == 2);
-        REQUIRE(store->nextFailed().has_value());
-        CHECK(store->nextFailed()->id == "hard1");
+        const int today = core::todayNumber();
+        CHECK_FALSE(store->card("0000D").has_value());  // solved at once: no card
+        CHECK(store->reviewQueue(today).scheduled == 2);
+        CHECK(store->reviewQueue(today).due == 0);
+        CHECK(store->reviewQueue(today).nextDueDay == today + 1);
+        CHECK_FALSE(store->nextDue(today).has_value());
+        REQUIRE(store->nextDue(today + 1).has_value());
+        CHECK(store->reviewQueue(today + 1).due == 2);
+
+        // Solving a due puzzle pushes it further out; missing it brings it back tomorrow.
+        store->scheduleAfterAttempt("hard1", true, today + 1);
+        const auto spaced = store->card("hard1");
+        REQUIRE(spaced.has_value());
+        CHECK(spaced->dueDay > today + 1);
+        CHECK(store->reviewQueue(today + 1).due == 1);
+        CHECK(store->nextDue(today + 1)->id == "easy1");
+        store->scheduleAfterAttempt("easy1", false, today + 1);
+        CHECK(store->card("easy1")->dueDay == today + 2);
+        CHECK(store->card("easy1")->lapses == 2);
         store->recordAttempt(*store->get("hard1"), true, 9.0, false);
-        CHECK(store->failedCount() == 1);
-        CHECK(store->nextFailed()->id == "easy1");
         CHECK(store->stats().streak == 1);
     }
 }
@@ -391,4 +406,34 @@ TEST_CASE("explorer over the library") {
     REQUIRE(replies.size() == 2);
     CHECK(replies[0].games == 1);
     CHECK(index.moves("8/8/8/4k3/8/8/4K3/8 w - - 0 1", false).empty());
+}
+
+TEST_CASE("training store: starter repertoires and mistake cards") {
+    TempDir dir;
+    {
+        std::ofstream(dir.path / "a.pgn") << "[Event \"Starter: Test White\"]\n[Side \"White\"]\n\n1. e4 e5 (1... c5 2. Nf3) 2. Nf3 *\n";
+        std::ofstream(dir.path / "b.pgn") << "[Event \"Starter: Test Black\"]\n[Side \"Black\"]\n\n1. d4 d5 *\n";
+    }
+    const auto store = TrainingStore::open(":memory:");
+    REQUIRE(store != nullptr);
+    CHECK(store->addStarterRepertoires(dir.path) == 2);
+    const auto repertoires = store->repertoires();
+    REQUIRE(repertoires.size() == 2);
+    CHECK(repertoires[0].name == "Test White");
+    CHECK(repertoires[0].folder == "Starter");
+    CHECK(repertoires[1].color == core::Color::Black);
+    CHECK(store->loadTree(repertoires[0].id).moveCount() == 5);
+    // Only once, even after the user deletes them.
+    store->removeRepertoire(repertoires[0].id);
+    CHECK(store->addStarterRepertoires(dir.path) == 0);
+
+    CHECK(store->mistakeCards().empty());
+    core::CardState card;
+    card.dueDay = 42;
+    CHECK(store->saveMistakeCard("pos e2e4", card));
+    card.dueDay = 50;
+    CHECK(store->saveMistakeCard("pos e2e4", card));
+    const auto cards = store->mistakeCards();
+    REQUIRE(cards.size() == 1);
+    CHECK(cards.at("pos e2e4").dueDay == 50);
 }

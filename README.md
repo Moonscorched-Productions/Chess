@@ -32,6 +32,9 @@ Play:
 - Hints: "Hint" (or H) marks the piece Stockfish would move; pressing it again shows the move
   as an arrow. Hints come from a second engine process at full strength, whatever level the
   opponent plays at.
+- Six colour themes (Forest, Walnut, Midnight, Rosewood, Paper, Sand), each with matching
+  board colours, the Source Serif 4 font (or the system font), translucent panels and a
+  slow, softly animated background that can be turned off in Settings.
 - Fullscreen with F11 or in Settings.
 - Your own sound effects: in Settings, "Choose..." picks a file (ogg, mp3, wav or flac) for the
   move, capture and checkmate sounds, for example the ones from Lichess; "Reset" brings back the
@@ -78,7 +81,9 @@ Puzzles:
   [Lichess puzzle database](https://database.lichess.org/#puzzles) can be imported from
   its CSV file (unpack the `.zst` download first).
 - A personal puzzle rating that moves with each rated attempt, a rating graph, streaks, a
-  history you can replay, a daily puzzle and a retry queue for missed puzzles.
+  history you can replay and a daily puzzle.
+- Spaced repetition: a missed puzzle comes back the next day under "Review due", then
+  further apart each time you solve it, and from the start again when you miss it.
 - Pick the difficulty relative to your rating and a theme (fork, pin, mate in 2, ...).
   Hints and "Solution" are available; using them counts the puzzle as missed.
 
@@ -90,6 +95,9 @@ Openings:
   scheduled with spaced repetition, so known moves return after days and missed ones
   sooner. Transpositions count as one position.
 - Opening names (ECO code and name) are shown in Openings and Analysis.
+- Three starter repertoires are added on first start, in the folder "Starter": 1. e4 for
+  White (Italian Game and answers to the main defences), the Caro-Kann against 1. e4 and the
+  Queen's Gambit Declined against 1. d4. Edit or delete them like your own.
 
 Guess the Move:
 
@@ -124,6 +132,21 @@ Game Review:
 - Stepping through the moves plays the move and capture sounds.
 - Reviews are stored with the game (evaluations and engine moves go into its PGN as
   `[%eval]` and `[%best]` comments), so opening it again needs no engine.
+
+Training:
+
+- Dashboard: blunders and mistakes per game (with the last ten games), average centipawn
+  loss, puzzle and endgame success, results against each engine level and strength, mistakes
+  per game phase, and what is due today.
+- Weaknesses: every mistake and blunder in your reviewed games is checked for the tactic the
+  engine's move had ("missed a fork") and the one your move let the opponent play ("got
+  pinned", "left a piece hanging", "allowed a mate", ...). Patterns are ranked, each with a
+  tip, its examples (click one to open the game in Game Review at that move) and buttons to
+  practise it with puzzles or drill your own examples. Detection looks at the first move of
+  each line, so deeper combinations count as "positional or deeper".
+- Mistake drill: the positions where you went wrong, again. Any move the engine rates about
+  as good as its own counts. Missed positions come back the next day, solved ones on a
+  spaced schedule.
 
 Statistics:
 
@@ -204,7 +227,7 @@ in the background. Presence can be switched off in Settings.
 | `tests` | Unit tests for the rules, PGN, move classification, game review, statistics, puzzles, spaced repetition, the opening book, the UCI parser and the stores. |
 | `tools` | `ucicheck` (engine check) and `make_badges.py`, which draws the move-quality badges in `data/badges` (needs Python with Pillow; only to regenerate them). |
 | `third_party/chess` | [chess-library](https://github.com/Disservin/chess-library) by Disservin (MIT). |
-| `data` | Piece set, sounds, opening names, starter puzzles and the classic games for Guess the Move. The opening tables and puzzles come from [Lichess](https://database.lichess.org) (CC0). The cburnett pieces (by Colin M.L. Burnett, GPLv2+) come from the [lichess](https://github.com/lichess-org/lila) repository and are rasterized from SVG at startup. The sounds are from [Kenney](https://kenney.nl) (CC0). |
+| `data` | Piece set, sounds, opening names, starter puzzles, starter repertoires and the classic games for Guess the Move. The opening tables and puzzles come from [Lichess](https://database.lichess.org) (CC0). The cburnett pieces (by Colin M.L. Burnett, GPLv2+) come from the [lichess](https://github.com/lichess-org/lila) repository and are rasterized from SVG at startup. The sounds are from [Kenney](https://kenney.nl) (CC0). |
 
 ## Shortcuts
 

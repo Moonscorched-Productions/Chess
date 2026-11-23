@@ -6,6 +6,7 @@
 #include <istream>
 #include <string_view>
 
+#include "chess/Repertoire.h"
 #include "storage/Sqlite.h"
 
 namespace storage {
@@ -34,6 +35,17 @@ CREATE TABLE IF NOT EXISTS puzzle_attempts (
     rating_after  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS puzzle_attempts_puzzle ON puzzle_attempts(puzzle_id);
+-- Spaced repetition: a puzzle gets a card when it is missed, and comes back for review
+-- on its due day until it has been solved often enough to be spaced out.
+CREATE TABLE IF NOT EXISTS puzzle_cards (
+    puzzle_id     TEXT PRIMARY KEY,
+    due_day       INTEGER NOT NULL DEFAULT 0,
+    interval_days INTEGER NOT NULL DEFAULT 0,
+    ease          REAL NOT NULL DEFAULT 2.5,
+    reviews       INTEGER NOT NULL DEFAULT 0,
+    streak        INTEGER NOT NULL DEFAULT 0,
+    lapses        INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -108,7 +120,86 @@ std::unique_ptr<PuzzleStore> PuzzleStore::open(const std::filesystem::path& file
         if (error != nullptr) *error = "Could not prepare the puzzle database: " + store->impl_->connection->message();
         return nullptr;
     }
+    // Puzzles missed before spaced repetition existed (and never solved since) start as due.
+    if (store->impl_->metaInt("puzzle_cards_migrated", 0) == 0) {
+        Statement migrate(*store->impl_->connection,
+                          "INSERT OR IGNORE INTO puzzle_cards (puzzle_id, due_day, lapses) "
+                          "SELECT DISTINCT a.puzzle_id, ?1, 1 FROM puzzle_attempts a WHERE a.solved = 0 "
+                          "AND NOT EXISTS (SELECT 1 FROM puzzle_attempts b WHERE b.puzzle_id = a.puzzle_id AND b.solved = 1)");
+        if (migrate.valid()) {
+            migrate.bind(1, core::todayNumber());
+            migrate.run();
+        }
+        store->impl_->setMetaInt("puzzle_cards_migrated", 1);
+    }
     return store;
+}
+
+std::optional<core::CardState> PuzzleStore::card(const std::string& puzzleId) const {
+    Statement statement(*impl_->connection,
+                        "SELECT due_day, interval_days, ease, reviews, streak, lapses FROM puzzle_cards WHERE puzzle_id=?1");
+    if (!statement.valid()) return std::nullopt;
+    statement.bind(1, puzzleId);
+    if (!statement.step()) return std::nullopt;
+    core::CardState card;
+    card.dueDay = static_cast<int>(statement.integer(0));
+    card.intervalDays = static_cast<int>(statement.integer(1));
+    card.ease = statement.real(2);
+    card.reviews = static_cast<int>(statement.integer(3));
+    card.streak = static_cast<int>(statement.integer(4));
+    card.lapses = static_cast<int>(statement.integer(5));
+    return card;
+}
+
+void PuzzleStore::saveCard(const std::string& puzzleId, const core::CardState& card) {
+    Statement statement(*impl_->connection,
+                        "INSERT INTO puzzle_cards (puzzle_id, due_day, interval_days, ease, reviews, streak, lapses) "
+                        "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(puzzle_id) DO UPDATE SET due_day=excluded.due_day, "
+                        "interval_days=excluded.interval_days, ease=excluded.ease, reviews=excluded.reviews, "
+                        "streak=excluded.streak, lapses=excluded.lapses");
+    if (!statement.valid()) return;
+    statement.bind(1, puzzleId);
+    statement.bind(2, card.dueDay);
+    statement.bind(3, card.intervalDays);
+    statement.bind(4, card.ease);
+    statement.bind(5, card.reviews);
+    statement.bind(6, card.streak);
+    statement.bind(7, card.lapses);
+    statement.run();
+}
+
+void PuzzleStore::scheduleAfterAttempt(const std::string& puzzleId, bool solved, int today) {
+    const std::optional<core::CardState> existing = card(puzzleId);
+    if (solved && !existing) return;  // solved at the first try: nothing to repeat
+    core::CardState next = core::reviewCard(existing.value_or(core::CardState{}), solved, today);
+    // A miss comes back tomorrow rather than straight away, once the solution is forgotten.
+    if (!solved) next.dueDay = today + 1;
+    saveCard(puzzleId, next);
+}
+
+std::optional<core::Puzzle> PuzzleStore::nextDue(int today) const {
+    const std::string sql = std::string("SELECT ") + kPuzzleColumns +
+                            " FROM puzzles p JOIN puzzle_cards c ON c.puzzle_id = p.id WHERE c.due_day <= ?1 "
+                            "ORDER BY c.due_day, c.rowid LIMIT 1";
+    Statement statement(*impl_->connection, sql.c_str());
+    if (!statement.valid()) return std::nullopt;
+    statement.bind(1, today);
+    if (!statement.step()) return std::nullopt;
+    return readPuzzle(statement);
+}
+
+ReviewQueue PuzzleStore::reviewQueue(int today) const {
+    ReviewQueue queue;
+    Statement statement(*impl_->connection,
+                        "SELECT COUNT(*), COALESCE(SUM(c.due_day <= ?1), 0), MIN(CASE WHEN c.due_day > ?1 THEN c.due_day END) "
+                        "FROM puzzle_cards c JOIN puzzles p ON p.id = c.puzzle_id");
+    if (!statement.valid()) return queue;
+    statement.bind(1, today);
+    if (!statement.step()) return queue;
+    queue.scheduled = static_cast<int>(statement.integer(0));
+    queue.due = static_cast<int>(statement.integer(1));
+    if (!statement.isNull(2)) queue.nextDueDay = static_cast<int>(statement.integer(2));
+    return queue;
 }
 
 int PuzzleStore::count() const {
@@ -186,25 +277,6 @@ std::optional<core::Puzzle> PuzzleStore::daily(int dayNumber) const {
     return random(filter, seed >> 16);
 }
 
-std::optional<core::Puzzle> PuzzleStore::nextFailed() const {
-    const std::string sql = std::string("SELECT ") + kPuzzleColumns +
-                            " FROM puzzles WHERE id = ("
-                            "  SELECT a.puzzle_id FROM puzzle_attempts a WHERE a.solved = 0"
-                            "  AND NOT EXISTS (SELECT 1 FROM puzzle_attempts b WHERE b.puzzle_id = a.puzzle_id AND b.solved = 1)"
-                            "  ORDER BY a.id LIMIT 1)";
-    Statement statement(*impl_->connection, sql.c_str());
-    if (!statement.valid() || !statement.step()) return std::nullopt;
-    return readPuzzle(statement);
-}
-
-int PuzzleStore::failedCount() const {
-    Statement statement(*impl_->connection,
-                        "SELECT COUNT(DISTINCT a.puzzle_id) FROM puzzle_attempts a WHERE a.solved = 0 "
-                        "AND NOT EXISTS (SELECT 1 FROM puzzle_attempts b WHERE b.puzzle_id = a.puzzle_id AND b.solved = 1)");
-    if (!statement.valid() || !statement.step()) return 0;
-    return static_cast<int>(statement.integer(0));
-}
-
 int PuzzleStore::recordAttempt(const core::Puzzle& puzzle, bool solved, double seconds, bool rated) {
     int rating = impl_->metaInt("puzzle_rating", 1500);
     if (rated) {
@@ -225,6 +297,7 @@ int PuzzleStore::recordAttempt(const core::Puzzle& puzzle, bool solved, double s
         statement.bind(6, rating);
         statement.run();
     }
+    scheduleAfterAttempt(puzzle.id, solved, core::todayNumber());
     return rating;
 }
 

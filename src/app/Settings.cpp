@@ -58,6 +58,22 @@ std::string writeColor(const std::array<float, 3>& color) {
 
 }  // namespace
 
+const std::array<UiTheme, 6>& uiThemes() {
+    const auto rgb = [](int r, int g, int b) {
+        return std::array<float, 3>{static_cast<float>(r) / 255.0f, static_cast<float>(g) / 255.0f,
+                                    static_cast<float>(b) / 255.0f};
+    };
+    static const std::array<UiTheme, 6> themes = {{
+        {"Forest", false, rgb(238, 238, 210), rgb(118, 150, 86)},
+        {"Walnut", false, rgb(240, 217, 181), rgb(181, 136, 99)},
+        {"Midnight", false, rgb(222, 227, 230), rgb(140, 162, 173)},
+        {"Rosewood", false, rgb(238, 222, 222), rgb(170, 120, 132)},
+        {"Paper", true, rgb(238, 238, 210), rgb(118, 150, 86)},
+        {"Sand", true, rgb(240, 217, 181), rgb(181, 136, 99)},
+    }};
+    return themes;
+}
+
 const std::array<BoardTheme, 4>& boardThemes() {
     // Built from 0..255 components so a theme still matches after a save/load round trip.
     const auto rgb = [](int r, int g, int b) {
@@ -93,6 +109,7 @@ Settings Settings::load(const std::filesystem::path& file) {
     std::ifstream in(file);
     if (!in) return settings;
 
+    bool sawTheme = false;
     std::string line;
     while (std::getline(in, line)) {
         const std::string_view view = trim(line);
@@ -154,6 +171,15 @@ Settings Settings::load(const std::filesystem::path& file) {
             settings.playerNames = std::string(value);
         } else if (key == "light_mode") {
             readBool(value, settings.lightMode);
+            // Files from before the themes: light mode means the Paper theme.
+            if (!sawTheme) settings.uiTheme = settings.lightMode ? 4 : 0;
+        } else if (key == "theme") {
+            readInt(value, settings.uiTheme);
+            sawTheme = true;
+        } else if (key == "serif_font") {
+            readBool(value, settings.serifFont);
+        } else if (key == "animated_background") {
+            readBool(value, settings.animatedBackground);
         } else if (key == "save_games_to_library") {
             readBool(value, settings.saveGamesToLibrary);
         } else if (key == "play_as") {
@@ -220,6 +246,9 @@ bool Settings::save(const std::filesystem::path& file) const {
     out << "clock_increment_seconds=" << clockIncrementSeconds << '\n';
     out << "player_names=" << playerNames << '\n';
     out << "light_mode=" << (lightMode ? 1 : 0) << '\n';
+    out << "theme=" << uiTheme << '\n';
+    out << "serif_font=" << (serifFont ? 1 : 0) << '\n';
+    out << "animated_background=" << (animatedBackground ? 1 : 0) << '\n';
     out << "play_as=" << (playAs == ColorChoice::Black ? "black" : playAs == ColorChoice::Random ? "random" : "white") << '\n';
     out << "play_against_engine=" << (playAgainstEngine ? 1 : 0) << '\n';
     out << "light_square=" << writeColor(lightSquare) << '\n';
@@ -244,6 +273,8 @@ void Settings::sanitize() {
     elo = std::clamp(elo, 1320, 3190);
     thinkTimeMs = std::clamp(thinkTimeMs, 100, 30000);
     depthLimit = std::clamp(depthLimit, 0, 40);
+    uiTheme = std::clamp(uiTheme, 0, static_cast<int>(uiThemes().size()) - 1);
+    lightMode = uiThemes()[static_cast<std::size_t>(uiTheme)].light;
     clockBaseSeconds = std::clamp(clockBaseSeconds, 0, 3 * 3600);
     clockIncrementSeconds = clockBaseSeconds == 0 ? 0 : std::clamp(clockIncrementSeconds, 0, 180);
     soundVolume = std::clamp(soundVolume, 0, 100);

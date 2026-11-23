@@ -170,8 +170,40 @@ SettingsScreen::Changes SettingsScreen::draw() {
     // --- Appearance -----------------------------------------------------------
     ImGui::Spacing();
     ImGui::SeparatorText("Appearance");
-    row("Light mode");
-    changes.any |= ImGui::Checkbox("##lightmode", &s.lightMode);
+    row("Theme");
+    {
+        const auto& themes = app::uiThemes();
+        ImGui::SetNextItemWidth(220.0f);
+        if (ImGui::BeginCombo("##uitheme", themes[static_cast<std::size_t>(s.uiTheme)].name)) {
+            for (std::size_t i = 0; i < themes.size(); ++i) {
+                const std::string label = std::string(themes[i].name) + (themes[i].light ? "  (light)" : "  (dark)");
+                if (ImGui::Selectable(label.c_str(), s.uiTheme == static_cast<int>(i))) {
+                    s.uiTheme = static_cast<int>(i);
+                    s.lightMode = themes[i].light;
+                    // Each theme comes with matching board colours; they can still be changed below.
+                    s.lightSquare = themes[i].boardLight;
+                    s.darkSquare = themes[i].boardDark;
+                    changes.any = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Also sets matching board colours.");
+    }
+    row("Font");
+    {
+        int font = s.serifFont ? 0 : 1;
+        ImGui::SetNextItemWidth(220.0f);
+        if (ImGui::Combo("##font", &font, "Source Serif\0System font\0")) {
+            s.serifFont = font == 0;
+            changes.any = true;
+        }
+    }
+    row("Animated background");
+    changes.any |= ImGui::Checkbox("##animatedbg", &s.animatedBackground);
+    ImGui::SameLine();
+    ImGui::TextDisabled("Slow, soft light behind the panels.");
     row("Fullscreen");
     changes.any |= ImGui::Checkbox("##fullscreen", &s.fullscreen);
     ImGui::SameLine();

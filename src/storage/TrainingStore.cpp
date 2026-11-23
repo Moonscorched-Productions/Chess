@@ -1,5 +1,10 @@
 #include "storage/TrainingStore.h"
 
+#include <algorithm>
+#include <fstream>
+#include <iterator>
+#include <system_error>
+
 #include "chess/Pgn.h"
 #include "storage/Sqlite.h"
 
@@ -27,6 +32,20 @@ CREATE TABLE IF NOT EXISTS repertoire_cards (
     streak        INTEGER NOT NULL DEFAULT 0,
     lapses        INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (repertoire_id, position)
+);
+-- Positions before the user's own mistakes, drilled with spaced repetition.
+CREATE TABLE IF NOT EXISTS mistake_cards (
+    position      TEXT PRIMARY KEY,
+    due_day       INTEGER NOT NULL DEFAULT 0,
+    interval_days INTEGER NOT NULL DEFAULT 0,
+    ease          REAL NOT NULL DEFAULT 2.5,
+    reviews       INTEGER NOT NULL DEFAULT 0,
+    streak        INTEGER NOT NULL DEFAULT 0,
+    lapses        INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS endgame_results (
     position_id TEXT PRIMARY KEY,
@@ -119,6 +138,70 @@ bool TrainingStore::saveTree(RepertoireId id, const core::GameTree& tree) {
     statement.bind(1, core::writePgn(core::GameRecord{{}, tree}));
     statement.bind(2, id);
     return statement.run() && impl_->connection->changes() > 0;
+}
+
+std::unordered_map<std::string, core::CardState> TrainingStore::mistakeCards() const {
+    std::unordered_map<std::string, core::CardState> result;
+    Statement statement(*impl_->connection,
+                        "SELECT position, due_day, interval_days, ease, reviews, streak, lapses FROM mistake_cards");
+    if (!statement.valid()) return result;
+    while (statement.step()) {
+        core::CardState card;
+        card.dueDay = static_cast<int>(statement.integer(1));
+        card.intervalDays = static_cast<int>(statement.integer(2));
+        card.ease = statement.real(3);
+        card.reviews = static_cast<int>(statement.integer(4));
+        card.streak = static_cast<int>(statement.integer(5));
+        card.lapses = static_cast<int>(statement.integer(6));
+        result.emplace(statement.text(0), card);
+    }
+    return result;
+}
+
+bool TrainingStore::saveMistakeCard(const std::string& key, const core::CardState& card) {
+    Statement statement(*impl_->connection,
+                        "INSERT INTO mistake_cards (position, due_day, interval_days, ease, reviews, streak, lapses) "
+                        "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(position) DO UPDATE SET due_day=excluded.due_day, "
+                        "interval_days=excluded.interval_days, ease=excluded.ease, reviews=excluded.reviews, "
+                        "streak=excluded.streak, lapses=excluded.lapses");
+    if (!statement.valid()) return false;
+    statement.bind(1, key);
+    statement.bind(2, card.dueDay);
+    statement.bind(3, card.intervalDays);
+    statement.bind(4, card.ease);
+    statement.bind(5, card.reviews);
+    statement.bind(6, card.streak);
+    statement.bind(7, card.lapses);
+    return statement.run();
+}
+
+int TrainingStore::addStarterRepertoires(const std::filesystem::path& directory) {
+    {
+        Statement check(*impl_->connection, "SELECT 1 FROM meta WHERE key='starter_repertoires'");
+        if (check.valid() && check.step()) return 0;  // added before (and maybe deleted since)
+    }
+    std::error_code ec;
+    std::vector<std::filesystem::path> files;
+    for (std::filesystem::directory_iterator it(directory, ec), end; !ec && it != end; it.increment(ec)) {
+        if (it->path().extension() == ".pgn") files.push_back(it->path());
+    }
+    if (files.empty()) return 0;
+    std::sort(files.begin(), files.end());
+    int added = 0;
+    for (const std::filesystem::path& file : files) {
+        std::ifstream input(file, std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        const std::optional<core::GameRecord> record = core::parsePgn(text);
+        if (!record || record->tree.moveCount() == 0) continue;
+        std::string name = record->tag("Event");
+        if (name.rfind("Starter: ", 0) == 0) name = name.substr(9);
+        if (name.empty()) name = file.stem().string();
+        const core::Color color = record->tag("Side") == "Black" ? core::Color::Black : core::Color::White;
+        const std::optional<RepertoireId> id = createRepertoire(name, color, "Starter");
+        if (id && saveTree(*id, record->tree)) ++added;
+    }
+    impl_->connection->exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('starter_repertoires', '1')");
+    return added;
 }
 
 std::unordered_map<std::string, core::CardState> TrainingStore::cards(RepertoireId id) const {

@@ -28,6 +28,7 @@
 #include "ui/OpeningsScreen.h"
 #include "ui/PlayScreen.h"
 #include "ui/GuessScreen.h"
+#include "ui/TrainingScreen.h"
 #include "ui/PuzzleScreen.h"
 #include "ui/QualityBadge.h"
 #include "ui/Common.h"
@@ -48,10 +49,11 @@ struct SectionInfo {
     const char* plannedFor;  // nullptr when the section is implemented
 };
 
-constexpr std::array<SectionInfo, 10> kSections = {{
+constexpr std::array<SectionInfo, 11> kSections = {{
     {Section::Play, "Play", nullptr},
     {Section::Analysis, "Analysis", nullptr},
     {Section::Review, "Game Review", nullptr},
+    {Section::Training, "Training", nullptr},
     {Section::Puzzles, "Puzzles", nullptr},
     {Section::Guess, "Guess the Move", nullptr},
     {Section::Openings, "Openings", nullptr},
@@ -145,6 +147,10 @@ Options Options::parse(int argc, char** argv) {
             options.explorer = true;
         } else if (arg == "--guess" && hasValue) {
             options.guessGame = std::atoi(argv[++i]);
+        } else if (arg == "--training" && hasValue) {
+            options.trainingTab = std::atoi(argv[++i]);
+        } else if (arg == "--theme" && hasValue) {
+            options.theme = std::atoi(argv[++i]);
         } else if (arg == "--autoguess") {
             options.autoGuess = true;
         } else if (arg == "--coach") {
@@ -231,7 +237,9 @@ App::App(const Options& options)
     if (!imguiReady_) return;
     ImGui::GetIO().IniFilename = nullptr;
     if (!options_.playerNames.empty()) settings_.playerNames = options_.playerNames;
-    if (options_.lightMode) settings_.lightMode = true;
+    if (options_.lightMode) settings_.uiTheme = 4;  // Paper
+    if (options_.theme >= 0) settings_.uiTheme = options_.theme;
+    settings_.sanitize();
     if (options_.fullscreen) settings_.fullscreen = true;
     if (options_.blindfold) settings_.blindfold = true;
     if (options_.moveBadges) settings_.playMoveBadges = true;
@@ -265,6 +273,7 @@ App::App(const Options& options)
     if (options_.openNewGame) play_->openNewGameDialog();
     puzzleStore_ = storage::PuzzleStore::open(databaseFile);
     trainingStore_ = storage::TrainingStore::open(databaseFile);
+    if (trainingStore_) trainingStore_->addStarterRepertoires(findUpwards("data") / "repertoires");
     openingBook_.load(findUpwards("data") / "openings");
     play_->setOpeningSources(&openingBook_, trainingStore_.get());
     if (!options_.practise.empty()) play_->practiseOpening(options_.practise);
@@ -278,6 +287,12 @@ App::App(const Options& options)
     guess_ = std::make_unique<ui::GuessScreen>(settings_, assets_, store_.get(),
                                                findUpwards("data") / "games" / "classics.pgn");
     guess_->setAutoGuess(options_.autoGuess);
+    training_ = std::make_unique<ui::TrainingScreen>(settings_, assets_, store_ ? databaseFile : std::filesystem::path{},
+                                                     trainingStore_.get());
+    if (options_.trainingTab >= 0) {
+        training_->showTab(options_.trainingTab);
+        section_ = Section::Training;
+    }
     if (options_.guessGame >= 0) {
         guess_->startClassic(static_cast<std::size_t>(options_.guessGame), core::Color::White);
         section_ = Section::Guess;
@@ -341,6 +356,7 @@ App::~App() {
     library_.reset();
     puzzles_.reset();
     guess_.reset();
+    training_.reset();
     openings_.reset();
     endgames_.reset();
     analysis_.reset();
@@ -380,7 +396,29 @@ void App::routeRequests() {
         review_->markDirty();
         statistics_->markDirty();
     }
-    if (review_->consumeReviewsChanged()) statistics_->markDirty();
+    if (review_->consumeReviewsChanged()) {
+        statistics_->markDirty();
+        training_->markDirty();
+    }
+    // Training sends the user to puzzles, a game or the endgames.
+    if (std::optional<std::string> theme = training_->takePuzzleThemeRequest()) {
+        section_ = Section::Puzzles;
+        if (theme->empty()) {
+            puzzles_->startReview();
+        } else {
+            puzzles_->practiseTheme(*theme);
+        }
+    }
+    if (std::optional<ui::TrainingScreen::GameRequest> request = training_->takeGameRequest(); request && store_) {
+        if (const std::optional<std::string> pgn = store_->pgn(request->gameId)) {
+            if (std::optional<core::GameRecord> record = core::parsePgn(*pgn)) {
+                review_->load(std::move(*record), request->gameId);
+                review_->goToPly(request->ply);
+                section_ = Section::Review;
+            }
+        }
+    }
+    if (training_->takeEndgameRequest()) section_ = Section::Endgames;
     if (statistics_->consumeReviewRequest()) section_ = Section::Review;
 
     // Games sent to Game Review.
@@ -454,6 +492,7 @@ void App::updatePresence() {
             break;
         case Section::Puzzles: text = puzzles_->presence(); break;
         case Section::Guess: text = guess_->presence(); break;
+        case Section::Training: text = training_->presence(); break;
         case Section::Openings: text = openings_->presence(); break;
         case Section::Endgames:
             text.details = "Choosing an endgame to practise";
@@ -473,9 +512,11 @@ void App::updatePresence() {
 }
 
 void App::applyAppearance() {
-    appliedLightMode_ = settings_.lightMode;
-    applyTheme(settings_.lightMode);
-    ui::setColorScheme(settings_.lightMode);
+    appliedTheme_ = settings_.uiTheme;
+    setSerifFont(settings_.serifFont);
+    applyTheme(settings_.uiTheme);
+    const ThemeColors colors = themeColors(settings_.uiTheme);
+    ui::setColorScheme(colors.accentText, colors.error);
 }
 
 // Switches between the window and fullscreen. The window is created anew, so this must
@@ -508,6 +549,7 @@ void App::beginImGuiFrame() {
     // The scale changes when the window moves between a Retina and a normal display.
     pixelsPerPoint_ = platform::windowScaleFactor(reinterpret_cast<void*>(window_.getNativeHandle()));
     setFontDensity(pixelsPerPoint_);
+    setSerifFont(settings_.serifFont);  // the font atlas may only change between frames
 
     ImGuiIO& io = ImGui::GetIO();
     io.DisplayFramebufferScale = ImVec2(pixelsPerPoint_, pixelsPerPoint_);
@@ -605,6 +647,7 @@ void App::frame() {
     if (size.x == 0 || size.y == 0) return;  // minimized
 
     beginImGuiFrame();
+    drawBackground(settings_.uiTheme, backgroundClock_.getElapsedTime().asSeconds(), settings_.animatedBackground);
 
     play_->update();
     analysis_->update(section_ == Section::Analysis);
@@ -612,6 +655,11 @@ void App::frame() {
     review_->update();
     if (section_ == Section::Puzzles) puzzles_->update();
     if (section_ == Section::Guess) guess_->update();
+    if (section_ != shownSection_) {
+        shownSection_ = section_;
+        if (section_ == Section::Training) training_->onShow();
+    }
+    training_->update();
     if (section_ == Section::Openings) openings_->update();
     routeRequests();
     updatePresence();
@@ -621,7 +669,9 @@ void App::frame() {
     drawSidebar(sidebarWidth, display.y);
     drawContent(sidebarWidth, display.x - sidebarWidth, display.y);
 
-    window_.clear(settings_.lightMode ? sf::Color(237, 235, 231) : sf::Color(22, 21, 18));
+    const ImVec4 background = themeColors(settings_.uiTheme).background;
+    window_.clear(sf::Color(static_cast<std::uint8_t>(background.x * 255.0f), static_cast<std::uint8_t>(background.y * 255.0f),
+                            static_cast<std::uint8_t>(background.z * 255.0f)));
     renderImGui();
     if (screenshotRequested_) {
         screenshotRequested_ = false;
@@ -653,18 +703,52 @@ void App::drawSidebar(float width, float height) {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_ChildBg));
     ImGui::Begin("##sidebar", nullptr, kFixedWindow);
 
+    ImGui::PushFont(titleFont());
     ImGui::TextUnformatted("Chess");
+    ImGui::PopFont();
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
+    // The selected entry gets a highlight with an accent bar that glides to a new entry
+    // instead of jumping. It is drawn behind the entries (channel 0).
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    drawList->ChannelsSplit(2);
+    drawList->ChannelsSetCurrent(1);
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.0f, 0.5f));
+    std::optional<ImVec2> target;
+    float itemWidth = 0.0f;
     for (const SectionInfo& info : kSections) {
         const bool selected = section_ == info.section;
         const bool planned = info.plannedFor != nullptr;
         if (planned) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        if (ImGui::Selectable(info.label, selected, ImGuiSelectableFlags_None, ImVec2(0.0f, 30.0f))) section_ = info.section;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 10.0f);
+        if (ImGui::Selectable(info.label, selected, ImGuiSelectableFlags_None, ImVec2(0.0f, 34.0f))) section_ = info.section;
+        if (selected) {
+            target = ImVec2(ImGui::GetItemRectMin().x - 10.0f, ImGui::GetItemRectMin().y);
+            itemWidth = ImGui::GetItemRectSize().x + 10.0f;
+        }
         if (planned) ImGui::PopStyleColor();
     }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+    if (target) {
+        const float dt = ImGui::GetIO().DeltaTime;
+        if (sidebarIndicatorY_ < 0.0f || !settings_.animations) {
+            sidebarIndicatorY_ = target->y;
+        } else {
+            sidebarIndicatorY_ += (target->y - sidebarIndicatorY_) * std::min(1.0f, dt * 14.0f);
+        }
+        drawList->ChannelsSetCurrent(0);
+        const ImVec2 min(target->x, sidebarIndicatorY_);
+        const ImVec2 max(target->x + itemWidth, sidebarIndicatorY_ + 34.0f);
+        drawList->AddRectFilled(min, max, ImGui::GetColorU32(ImGuiCol_Header), 8.0f);
+        drawList->AddRectFilled(ImVec2(min.x + 2.0f, min.y + 8.0f), ImVec2(min.x + 5.0f, max.y - 8.0f),
+                                ImGui::GetColorU32(ImGuiCol_CheckMark), 2.0f);
+    }
+    drawList->ChannelsMerge();
 
     ImGui::End();
     ImGui::PopStyleColor();
@@ -692,6 +776,8 @@ void App::drawContent(float x, float width, float height) {
         puzzles_->draw();
     } else if (section_ == Section::Guess) {
         guess_->draw();
+    } else if (section_ == Section::Training) {
+        training_->draw();
     } else if (section_ == Section::Library) {
         library_->draw();
     } else if (section_ == Section::Review) {
@@ -702,7 +788,7 @@ void App::drawContent(float x, float width, float height) {
         const ui::SettingsScreen::Changes changes = settingsScreen_->draw();
         if (changes.any) {
             saveSettings();
-            if (settings_.lightMode != appliedLightMode_) applyAppearance();
+            if (settings_.uiTheme != appliedTheme_) applyAppearance();
             statistics_->markDirty();
             play_->onSettingsChanged(changes.enginePath);
             analysis_->onSettingsChanged(changes.enginePath);

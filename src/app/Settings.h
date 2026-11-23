@@ -18,6 +18,15 @@ struct BoardTheme {
 // Built-in board colour presets. The last entry of the settings UI is "Custom".
 const std::array<BoardTheme, 4>& boardThemes();
 
+// Application colour themes. Each comes with board colours that suit it.
+struct UiTheme {
+    const char* name;
+    bool light;
+    std::array<float, 3> boardLight;
+    std::array<float, 3> boardDark;
+};
+const std::array<UiTheme, 6>& uiThemes();
+
 // Engine strength behind each difficulty level (1..8).
 struct LevelPreset {
     const char* name;
@@ -59,7 +68,10 @@ struct Settings {
     std::string playerNames = "You";
 
     // Appearance
-    bool lightMode = false;
+    int uiTheme = 0;                // index into uiThemes()
+    bool lightMode = false;         // follows the theme (kept for older settings files)
+    bool serifFont = true;          // the bundled Source Serif; false = the system's interface font
+    bool animatedBackground = true; // slow, soft light behind the panels
     bool fullscreen = false;
     bool blindfold = false;  // hide the pieces in Play and Puzzles
     bool playMoveBadges = false;  // judge every move in Play as it is made (Best, Mistake, ...)

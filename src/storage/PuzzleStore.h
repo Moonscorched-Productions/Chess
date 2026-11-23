@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "chess/Puzzle.h"
+#include "chess/Repertoire.h"
 
 namespace storage {
 
@@ -39,6 +40,13 @@ struct PuzzleStats {
     int ratedAttempts = 0;
 };
 
+// Puzzles waiting for review (spaced repetition).
+struct ReviewQueue {
+    int scheduled = 0;              // puzzles with a card
+    int due = 0;                    // ... of which due today or earlier
+    std::optional<int> nextDueDay;  // the next day something falls due, when nothing is due now
+};
+
 struct PuzzleImportResult {
     int imported = 0;
     int skipped = 0;
@@ -63,9 +71,14 @@ public:
     std::optional<core::Puzzle> random(const PuzzleFilter& filter, std::uint64_t seed) const;
     // The same puzzle for everyone asking on the same day.
     std::optional<core::Puzzle> daily(int dayNumber) const;
-    // A puzzle that was failed and has not been solved since (oldest failure first).
-    std::optional<core::Puzzle> nextFailed() const;
-    int failedCount() const;
+    // Spaced repetition. A missed puzzle gets a card and comes back the next day; each solve
+    // of a carded puzzle spaces the next review further out, each miss starts it over.
+    // The most overdue puzzle on `today` (a core::todayNumber() day), if any.
+    std::optional<core::Puzzle> nextDue(int today) const;
+    ReviewQueue reviewQueue(int today) const;
+    std::optional<core::CardState> card(const std::string& puzzleId) const;
+    // Updates the puzzle's card after an attempt (recordAttempt does this itself).
+    void scheduleAfterAttempt(const std::string& puzzleId, bool solved, int today);
 
     // Records an attempt. A rated attempt moves the user's rating; returns the new rating.
     int recordAttempt(const core::Puzzle& puzzle, bool solved, double seconds, bool rated);
@@ -84,6 +97,7 @@ public:
                                      const std::atomic<bool>* cancel = nullptr);
 
 private:
+    void saveCard(const std::string& puzzleId, const core::CardState& card);
     PuzzleStore();
     struct Impl;
     std::unique_ptr<Impl> impl_;

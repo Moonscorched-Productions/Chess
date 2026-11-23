@@ -53,6 +53,15 @@ public:
     std::unordered_map<std::string, core::CardState> cards(RepertoireId id) const;
     bool saveCard(RepertoireId id, const std::string& positionKey, const core::CardState& card);
 
+    // Adds the bundled repertoires (PGN files with a [Side "White"|"Black"] tag) in the folder
+    // "Starter" the first time it is called for this database. Returns how many were added.
+    int addStarterRepertoires(const std::filesystem::path& directory);
+
+    // --- Mistake drill ---------------------------------------------------------------
+    // Cards for positions in which the user went wrong, keyed by the caller.
+    std::unordered_map<std::string, core::CardState> mistakeCards() const;
+    bool saveMistakeCard(const std::string& key, const core::CardState& card);
+
     // --- Endgames -----------------------------------------------------------------
     void recordEndgame(const std::string& positionId, bool success);
     std::unordered_map<std::string, EndgameProgress> endgameProgress() const;

@@ -44,6 +44,8 @@ and a link to the source code of that exact version.
 | `data/openings` | [lichess-org/chess-openings](https://github.com/lichess-org/chess-openings) | CC0 1.0 |
 | `data/puzzles/starter.csv` | [Lichess puzzle database](https://database.lichess.org/#puzzles) | CC0 1.0 |
 | `data/sfx` | [Kenney](https://kenney.nl) sound packs | CC0 1.0 |
+| `data/fonts/SourceSerif4-Regular.ttf` | Source Serif 4 by Frank Grießhammer, [Adobe](https://github.com/adobe-fonts/source-serif) | SIL Open Font License 1.1 (`data/fonts/OFL.txt`) |
+| `data/games/classics.pgn`, `data/repertoires` | Historical games and opening lines (this project) | GPL version 3, like the program |
 | `data/badges` | Drawn by `tools/make_badges.py` (this project) | GPL version 3, like the program |
 | `data/moon-pawn-icon.png` | Moonscorched Productions (this project) | GPL version 3, like the program |
 

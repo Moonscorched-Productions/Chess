@@ -1,0 +1,5 @@
+[Event "Starter: Queen's Gambit Declined against 1. d4"]
+[Side "Black"]
+[Result "*"]
+
+1. d4 d5 2. c4 (2. Nf3 Nf6 3. c4 e6 4. Nc3 Be7) (2. Bf4 Nf6 3. e3 c5 4. c3 Nc6 5. Nd2 e6) (2. e3 Nf6 3. Bd3 c5 4. c3 Nc6) (2. Nc3 Nf6 3. Bg5 Nbd7) e6 3. Nc3 (3. Nf3 Nf6 4. Nc3 (4. g3 Be7 5. Bg2 O-O 6. O-O dxc4) Be7 5. Bf4 (5. Bg5 h6 6. Bh4 O-O 7. e3 b6) O-O 6. e3 c5 7. dxc5 Bxc5) (3. g3 Nf6 4. Bg2 Be7 5. Nf3 O-O 6. O-O dxc4) Nf6 4. Bg5 (4. cxd5 exd5 5. Bg5 c6 6. e3 Be7 7. Bd3 Nbd7) (4. Nf3 Be7 5. Bf4 O-O 6. e3 c5 7. dxc5 Bxc5) Be7 5. e3 O-O 6. Nf3 h6 7. Bh4 b6 8. cxd5 Nxd5 9. Bxe7 Qxe7 10. Nxd5 exd5 *

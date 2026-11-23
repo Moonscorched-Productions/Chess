@@ -95,7 +95,9 @@ std::string formatPlayTime(std::int64_t seconds) {
 }  // namespace
 
 void StatisticsScreen::draw() {
+    ImGui::PushFont(app::titleFont());
     ImGui::TextUnformatted("Statistics");
+    ImGui::PopFont();
     if (reviews_ == nullptr) {
         ImGui::TextColored(kErrorColor, "The game database is not available.");
         return;

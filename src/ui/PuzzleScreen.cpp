@@ -93,7 +93,7 @@ void PuzzleScreen::refreshStats() {
     history_ = store_->history(60);
     ratingHistory_ = store_->ratingHistory(120);
     puzzleCount_ = store_->count();
-    failedCount_ = store_->failedCount();
+    reviewQueue_ = store_->reviewQueue(core::todayNumber());
 }
 
 double PuzzleScreen::elapsedSeconds() const {
@@ -162,14 +162,24 @@ void PuzzleScreen::loadDaily() {
     notice_ = "Today's puzzle. It does not change your rating.";
 }
 
-void PuzzleScreen::loadFailed() {
+void PuzzleScreen::loadDue() {
     if (store_ == nullptr) return;
-    const std::optional<core::Puzzle> puzzle = store_->nextFailed();
+    const std::optional<core::Puzzle> puzzle = store_->nextDue(core::todayNumber());
     if (!puzzle || !begin(*puzzle, false)) {
-        notice_ = "There are no failed puzzles to retry.";
+        notice_ = "Nothing is due for review today.";
         return;
     }
-    notice_ = "A puzzle you missed before. It does not change your rating.";
+    const std::optional<core::CardState> card = store_->card(puzzle->id);
+    notice_ = "Review: a puzzle you missed before";
+    if (card && card->streak > 0) notice_ += " (solved " + std::to_string(card->streak) + "x in a row so far)";
+    notice_ += ". It does not change your rating.";
+}
+
+void PuzzleScreen::practiseTheme(std::string_view theme) {
+    for (int i = 0; i < static_cast<int>(std::size(kThemes)); ++i) {
+        if (theme == kThemes[i].tag) theme_ = i;
+    }
+    loadNext();
 }
 
 // --- Solving ---------------------------------------------------------------------
@@ -441,11 +451,21 @@ void PuzzleScreen::drawSidePanel(float width, float height) {
 
     if (ImGui::Button("Daily puzzle", half)) loadDaily();
     ImGui::SameLine();
-    ImGui::BeginDisabled(failedCount_ == 0);
+    ImGui::BeginDisabled(reviewQueue_.due == 0);
     char retryLabel[48];
-    std::snprintf(retryLabel, sizeof(retryLabel), "Retry failed (%d)###retryfailed", failedCount_);
-    if (ImGui::Button(retryLabel, half)) loadFailed();
+    std::snprintf(retryLabel, sizeof(retryLabel), "Review due (%d)###reviewdue", reviewQueue_.due);
+    if (ImGui::Button(retryLabel, half)) loadDue();
     ImGui::EndDisabled();
+    if (reviewQueue_.due > 0) {
+        ImGui::SetItemTooltip("Puzzles you missed come back on a schedule: the next day, then further apart each time "
+                              "you solve them.");
+    } else if (reviewQueue_.nextDueDay) {
+        const int days = *reviewQueue_.nextDueDay - core::todayNumber();
+        ImGui::SetItemTooltip("%d %s scheduled. The next one is due in %d %s.", reviewQueue_.scheduled,
+                              reviewQueue_.scheduled == 1 ? "puzzle is" : "puzzles are", days, days == 1 ? "day" : "days");
+    } else {
+        ImGui::SetItemTooltip("Puzzles you miss come back here for review on a schedule.");
+    }
 
     // --- Selection ---------------------------------------------------------------
     ImGui::Separator();

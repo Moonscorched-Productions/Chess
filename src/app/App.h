@@ -33,6 +33,7 @@ class EndgameScreen;
 class PlayScreen;
 class PuzzleScreen;
 class GuessScreen;
+class TrainingScreen;
 class ReviewScreen;
 class StatisticsScreen;
 class SettingsScreen;
@@ -40,7 +41,7 @@ class SettingsScreen;
 
 namespace app {
 
-enum class Section { Play, Analysis, Review, Puzzles, Guess, Openings, Endgames, Library, Statistics, Settings };
+enum class Section { Play, Analysis, Review, Training, Puzzles, Guess, Openings, Endgames, Library, Statistics, Settings };
 
 // Command line options. All of them are aids for automated checks.
 struct Options {
@@ -56,6 +57,8 @@ struct Options {
     bool openLibrary = false;        // --library: start on the Game Library section
     bool openPuzzles = false;        // --puzzles: start on the Puzzles section
     int guessGame = -1;              // --guess <n>: start guessing bundled game n
+    int theme = -1;                  // --theme <n>: colour theme (index into uiThemes())
+    int trainingTab = -1;            // --training <tab>: open Training on a tab (0..2)
     bool autoGuess = false;          // --autoguess: guess random moves (test aid)
     bool openOpenings = false;       // --openings: start on the Openings section
     bool openEndgames = false;       // --endgames: start on the Endgames section
@@ -150,12 +153,16 @@ private:
     std::unique_ptr<ui::LibraryScreen> library_;
     std::unique_ptr<ui::PuzzleScreen> puzzles_;
     std::unique_ptr<ui::GuessScreen> guess_;
+    std::unique_ptr<ui::TrainingScreen> training_;
+    Section shownSection_ = Section::Play;  // to notice when a section is opened
     std::unique_ptr<ui::OpeningsScreen> openings_;
     std::unique_ptr<ui::EndgameScreen> endgames_;
     std::unique_ptr<ui::ReviewScreen> review_;
     std::unique_ptr<ui::StatisticsScreen> statistics_;
     std::unique_ptr<ui::SettingsScreen> settingsScreen_;
-    bool appliedLightMode_ = false;
+    int appliedTheme_ = -1;
+    float sidebarIndicatorY_ = -1.0f;  // screen y of the sidebar highlight, gliding to the selected entry
+    sf::Clock backgroundClock_;  // drives the animated background
     bool appliedFullscreen_ = false;
     sf::Vector2u windowedSize_{1280u, 800u};
     Section section_ = Section::Play;
