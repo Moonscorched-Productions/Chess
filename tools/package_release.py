@@ -14,6 +14,7 @@ Windows and Linux: <out>/Chess-<version>-<platform>.zip, containing
 
     Chess-<version>-<platform>/
         chess(.exe)
+        msvcp140.dll, vcruntime140*.dll             (Windows: the Visual C++ runtime)
         data/
         engines/stockfish/<engine>, Copying.txt, SOURCE.txt
         LICENSE, THIRD_PARTY_NOTICES.md, README.md
@@ -199,6 +200,46 @@ def copy_executable(source: Path, target: Path) -> None:
 
 # --- Windows and Linux: a folder in a zip ------------------------------------
 
+# Files in data/ that are not part of a release: the icon source and private sound files.
+DATA_EXCLUDED = (ICON.name, "private", ".DS_Store")
+# The Visual C++ runtime the program is linked against. Copied next to the program so that it
+# starts on computers without the Visual C++ Redistributable.
+MSVC_RUNTIME = ("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")
+
+
+def msvc_runtime_folder() -> Path | None:
+    """The x64 runtime folder of the newest Visual Studio, e.g. .../Redist/MSVC/14.x/x64/Microsoft.VC145.CRT."""
+    roots = []
+    if os.environ.get("VCToolsRedistDir"):
+        roots.append(Path(os.environ["VCToolsRedistDir"]).parent)
+    vswhere = Path(os.environ.get("ProgramFiles(x86)", "")) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    if vswhere.is_file():
+        found = subprocess.run([str(vswhere), "-latest", "-products", "*", "-property", "installationPath"],
+                               capture_output=True, text=True)
+        if found.returncode == 0 and found.stdout.strip():
+            roots.append(Path(found.stdout.strip().splitlines()[0]) / "VC" / "Redist" / "MSVC")
+
+    def version_key(folder: Path) -> tuple[int, ...]:
+        return tuple(int(part) for part in folder.parent.parent.name.split(".") if part.isdigit())
+
+    for root in roots:
+        candidates = [folder for folder in root.glob("*/x64/Microsoft.VC*.CRT")
+                      if all((folder / dll).is_file() for dll in MSVC_RUNTIME)]
+        if candidates:
+            return max(candidates, key=version_key)
+    return None
+
+
+def copy_msvc_runtime(stage: Path) -> None:
+    folder = msvc_runtime_folder()
+    if folder is None:
+        print("package_release: warning: Visual C++ runtime DLLs not found; the program will need the "
+              "Visual C++ Redistributable (x64) on computers that do not have it")
+        return
+    for dll in MSVC_RUNTIME:
+        shutil.copy2(folder / dll, stage / dll)
+
+
 def package_folder(program: Path, engine: Path, version: str, out: Path) -> Path:
     name = f"{APP_NAME}-{project_version()}-{platform_name()}"
     stage = out / name
@@ -207,7 +248,9 @@ def package_folder(program: Path, engine: Path, version: str, out: Path) -> Path
     stage.mkdir(parents=True)
 
     copy_executable(program, stage / program.name)
-    shutil.copytree(ROOT / "data", stage / "data")
+    if platform.system() == "Windows":
+        copy_msvc_runtime(stage)
+    shutil.copytree(ROOT / "data", stage / "data", ignore=shutil.ignore_patterns(*DATA_EXCLUDED))
     for document in DOCUMENTS:
         shutil.copy2(ROOT / document, stage / document)
     engine_dir = stage / "engines" / "stockfish"
