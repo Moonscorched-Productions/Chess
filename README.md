@@ -1,5 +1,7 @@
 # Chess - A simple, no clutter chess engine to practice
 
+![](.github/analysis.png)
+
 A native, offline chess desktop application: play against Stockfish, analyse games, train
 with puzzles, opening repertoires and endgames, review your games with the engine and keep a
 personal game library (see `PRIMER.txt` for the feature list and phases).
